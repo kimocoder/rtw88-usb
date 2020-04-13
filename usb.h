@@ -107,13 +107,6 @@ struct rtw_usb {
 	struct rtw_dev *rtwdev;
 	struct usb_device *udev;
 
-	struct mutex usb_buf_mutex; /* mutex for usb_buf */
-	union {
-		__le32 val32;
-		__le16 val16;
-		u8 val8;
-	} usb_buf;
-
 	u8 num_in_pipes;
 	u8 num_out_pipes;
 	unsigned int pipe_interrupt;
