@@ -1630,7 +1630,7 @@ int rtw_core_init(struct rtw_dev *rtwdev)
 	skb_queue_head_init(&rtwdev->tx_report.queue);
 
 	mutex_init(&rtwdev->rf_lock);
-	spin_lock_init(&rtwdev->h2c.lock);
+	mutex_init(&rtwdev->h2c.lock);
 	spin_lock_init(&rtwdev->txq_lock);
 	spin_lock_init(&rtwdev->tx_report.q_lock);
 
