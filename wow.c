@@ -418,7 +418,8 @@ static void rtw_wow_fw_media_status_iter(void *data, struct ieee80211_sta *sta)
 	struct rtw_fw_media_status_iter_data *iter_data = data;
 	struct rtw_dev *rtwdev = iter_data->rtwdev;
 
-	rtw_fw_media_status_report(rtwdev, si->mac_id, iter_data->connect);
+	rtw_fw_media_status_report(rtwdev, si->mac_id, iter_data->connect,
+				   &iter_data->h2c_defer);
 }
 
 static void rtw_wow_fw_media_status(struct rtw_dev *rtwdev, bool connect)
@@ -427,8 +428,10 @@ static void rtw_wow_fw_media_status(struct rtw_dev *rtwdev, bool connect)
 
 	data.rtwdev = rtwdev;
 	data.connect = connect;
+	INIT_LIST_HEAD(&data.h2c_defer);
 
 	rtw_iterate_stas_atomic(rtwdev, rtw_wow_fw_media_status_iter, &data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &data.h2c_defer);
 }
 
 static void rtw_wow_config_pno_rsvd_page(struct rtw_dev *rtwdev,

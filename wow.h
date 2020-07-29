@@ -28,6 +28,7 @@ enum rtw_wake_reason {
 struct rtw_fw_media_status_iter_data {
 	struct rtw_dev *rtwdev;
 	u8 connect;
+	struct list_head h2c_defer;
 };
 
 struct rtw_fw_key_type_iter_data {

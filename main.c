@@ -287,8 +287,8 @@ int rtw_sta_add(struct rtw_dev *rtwdev, struct ieee80211_sta *sta,
 	for (i = 0; i < ARRAY_SIZE(sta->txq); i++)
 		rtw_txq_init(rtwdev, sta->txq[i]);
 
-	rtw_update_sta_info(rtwdev, si);
-	rtw_fw_media_status_report(rtwdev, si->mac_id, true);
+	rtw_update_sta_info(rtwdev, si, NULL);
+	rtw_fw_media_status_report(rtwdev, si->mac_id, true, NULL);
 
 	rtwdev->sta_cnt++;
 	rtw_info(rtwdev, "sta %pM joined with macid %d\n",
@@ -305,7 +305,7 @@ void rtw_sta_remove(struct rtw_dev *rtwdev, struct ieee80211_sta *sta,
 
 	rtw_release_macid(rtwdev, si->mac_id);
 	if (fw_exist)
-		rtw_fw_media_status_report(rtwdev, si->mac_id, false);
+		rtw_fw_media_status_report(rtwdev, si->mac_id, false, NULL);
 
 	for (i = 0; i < ARRAY_SIZE(sta->txq); i++)
 		rtw_txq_cleanup(rtwdev, sta->txq[i]);
@@ -891,7 +891,8 @@ static u64 rtw_update_rate_mask(struct rtw_dev *rtwdev,
 	return ra_mask;
 }
 
-void rtw_update_sta_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
+void rtw_update_sta_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
+			 struct list_head *defer)
 {
 	struct ieee80211_sta *sta = si->sta;
 	struct rtw_efuse *efuse = &rtwdev->efuse;
@@ -1000,7 +1001,7 @@ void rtw_update_sta_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 	si->ra_mask = ra_mask;
 	si->rate_id = rate_id;
 
-	rtw_fw_send_ra_info(rtwdev, si);
+	rtw_fw_send_ra_info(rtwdev, si, defer);
 }
 
 static int rtw_wait_firmware_completion(struct rtw_dev *rtwdev)

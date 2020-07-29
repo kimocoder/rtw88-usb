@@ -195,6 +195,7 @@ static u8 rtw_phy_get_rssi_level(u8 old_level, u8 rssi)
 struct rtw_phy_stat_iter_data {
 	struct rtw_dev *rtwdev;
 	u8 min_rssi;
+	struct list_head h2c_defer;
 };
 
 static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
@@ -207,7 +208,7 @@ static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
 	rssi = ewma_rssi_read(&si->avg_rssi);
 	si->rssi_level = rtw_phy_get_rssi_level(si->rssi_level, rssi);
 
-	rtw_fw_send_rssi_info(rtwdev, si);
+	rtw_fw_send_rssi_info(rtwdev, si, &iter_data->h2c_defer);
 
 	iter_data->min_rssi = min_t(u8, rssi, iter_data->min_rssi);
 }
@@ -219,7 +220,10 @@ static void rtw_phy_stat_rssi(struct rtw_dev *rtwdev)
 
 	data.rtwdev = rtwdev;
 	data.min_rssi = U8_MAX;
+	INIT_LIST_HEAD(&data.h2c_defer);
+
 	rtw_iterate_stas_atomic(rtwdev, rtw_phy_stat_rssi_iter, &data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &data.h2c_defer);
 
 	dm_info->pre_min_rssi = dm_info->min_rssi;
 	dm_info->min_rssi = data.min_rssi;
@@ -449,20 +453,32 @@ static void rtw_phy_dig(struct rtw_dev *rtwdev)
 		rtw_phy_dig_write(rtwdev, cur_igi);
 }
 
+struct rtw_phy_ra_iter_data {
+	struct rtw_dev *rtwdev;
+	struct list_head h2c_defer;
+};
+
 static void rtw_phy_ra_info_update_iter(void *data, struct ieee80211_sta *sta)
 {
-	struct rtw_dev *rtwdev = data;
+	struct rtw_phy_ra_iter_data *ra_data = data;
+	struct rtw_dev *rtwdev = ra_data->rtwdev;
 	struct rtw_sta_info *si = (struct rtw_sta_info *)sta->drv_priv;
 
-	rtw_update_sta_info(rtwdev, si);
+	rtw_update_sta_info(rtwdev, si, &ra_data->h2c_defer);
 }
 
 static void rtw_phy_ra_info_update(struct rtw_dev *rtwdev)
 {
+	struct rtw_phy_ra_iter_data ra_data;
+
 	if (rtwdev->watch_dog_cnt & 0x3)
 		return;
 
-	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, rtwdev);
+	ra_data.rtwdev = rtwdev;
+	INIT_LIST_HEAD(&ra_data.h2c_defer);
+
+	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, &ra_data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &ra_data.h2c_defer);
 }
 
 static void rtw_phy_dpk_track(struct rtw_dev *rtwdev)
