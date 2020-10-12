@@ -444,7 +444,7 @@ static int rtw_ops_sta_add(struct ieee80211_hw *hw,
 	for (i = 0; i < ARRAY_SIZE(sta->txq); i++)
 		rtw_txq_init(rtwdev, sta->txq[i]);
 
-	rtw_update_sta_info(rtwdev, si);
+	rtw_update_sta_info(rtwdev, si, NULL);
 	rtw_fw_media_status_report(rtwdev, si->mac_id, true, NULL);
 
 	rtwdev->sta_cnt++;
@@ -710,6 +710,7 @@ struct rtw_iter_bitrate_mask_data {
 	struct rtw_dev *rtwdev;
 	struct ieee80211_vif *vif;
 	const struct cfg80211_bitrate_mask *mask;
+	struct list_head h2c_defer;
 };
 
 static void rtw_ra_mask_info_update_iter(void *data, struct ieee80211_sta *sta)
@@ -730,7 +731,7 @@ static void rtw_ra_mask_info_update_iter(void *data, struct ieee80211_sta *sta)
 	}
 
 	si->use_cfg_mask = true;
-	rtw_update_sta_info(br_data->rtwdev, si);
+	rtw_update_sta_info(br_data->rtwdev, si, &br_data->h2c_defer);
 }
 
 static void rtw_ra_mask_info_update(struct rtw_dev *rtwdev,
@@ -742,7 +743,10 @@ static void rtw_ra_mask_info_update(struct rtw_dev *rtwdev,
 	br_data.rtwdev = rtwdev;
 	br_data.vif = vif;
 	br_data.mask = mask;
+	INIT_LIST_HEAD(&br_data.h2c_defer);
+
 	rtw_iterate_stas_atomic(rtwdev, rtw_ra_mask_info_update_iter, &br_data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &br_data.h2c_defer);
 }
 
 static int rtw_ops_set_bitrate_mask(struct ieee80211_hw *hw,

@@ -541,7 +541,8 @@ void rtw_fw_coex_tdma_type(struct rtw_dev *rtwdev,
 void rtw_fw_bt_wifi_control(struct rtw_dev *rtwdev, u8 op_code, u8 *data);
 void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
 			   struct list_head *defer);
-void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si);
+void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
+			 struct list_head *defer);
 void rtw_fw_media_status_report(struct rtw_dev *rtwdev, u8 mac_id, bool conn,
 				struct list_head *defer);
 int rtw_fw_write_data_rsvd_page(struct rtw_dev *rtwdev, u16 pg_addr,

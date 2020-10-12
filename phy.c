@@ -506,20 +506,32 @@ static void rtw_phy_dig(struct rtw_dev *rtwdev)
 		rtw_phy_dig_write(rtwdev, cur_igi);
 }
 
+struct rtw_phy_ra_iter_data {
+	struct rtw_dev *rtwdev;
+	struct list_head h2c_defer;
+};
+
 static void rtw_phy_ra_info_update_iter(void *data, struct ieee80211_sta *sta)
 {
-	struct rtw_dev *rtwdev = data;
+	struct rtw_phy_ra_iter_data *ra_data = data;
+	struct rtw_dev *rtwdev = ra_data->rtwdev;
 	struct rtw_sta_info *si = (struct rtw_sta_info *)sta->drv_priv;
 
-	rtw_update_sta_info(rtwdev, si);
+	rtw_update_sta_info(rtwdev, si, &ra_data->h2c_defer);
 }
 
 static void rtw_phy_ra_info_update(struct rtw_dev *rtwdev)
 {
+	struct rtw_phy_ra_iter_data ra_data;
+
 	if (rtwdev->watch_dog_cnt & 0x3)
 		return;
 
-	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, rtwdev);
+	ra_data.rtwdev = rtwdev;
+	INIT_LIST_HEAD(&ra_data.h2c_defer);
+
+	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, &ra_data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &ra_data.h2c_defer);
 }
 
 static void rtw_phy_dpk_track(struct rtw_dev *rtwdev)

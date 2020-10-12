@@ -487,7 +487,8 @@ void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
+void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
+			 struct list_head *defer)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 	bool no_update = si->updated;
@@ -511,6 +512,9 @@ void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 
 	si->init_ra_lv = 0;
 	si->updated = true;
+
+	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
+		return;
 
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
