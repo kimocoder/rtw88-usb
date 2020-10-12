@@ -445,7 +445,7 @@ static int rtw_ops_sta_add(struct ieee80211_hw *hw,
 		rtw_txq_init(rtwdev, sta->txq[i]);
 
 	rtw_update_sta_info(rtwdev, si);
-	rtw_fw_media_status_report(rtwdev, si->mac_id, true);
+	rtw_fw_media_status_report(rtwdev, si->mac_id, true, NULL);
 
 	rtwdev->sta_cnt++;
 
@@ -468,7 +468,7 @@ static int rtw_ops_sta_remove(struct ieee80211_hw *hw,
 	mutex_lock(&rtwdev->mutex);
 
 	rtw_release_macid(rtwdev, si->mac_id);
-	rtw_fw_media_status_report(rtwdev, si->mac_id, false);
+	rtw_fw_media_status_report(rtwdev, si->mac_id, false, NULL);
 
 	for (i = 0; i < ARRAY_SIZE(sta->txq); i++)
 		rtw_txq_cleanup(rtwdev, sta->txq[i]);

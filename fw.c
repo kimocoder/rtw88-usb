@@ -251,6 +251,43 @@ out:
 	spin_unlock(&rtwdev->h2c.lock);
 }
 
+struct h2c_defer_list {
+	struct list_head list;
+	u8 cmd [H2C_PKT_SIZE];
+};
+
+static bool rtw_fw_defer_h2c_cmd(struct rtw_dev *rtwdev, const u8 *cmd,
+				 struct list_head *defer)
+{
+	struct h2c_defer_list *new;
+
+	if (!defer)
+		return false;
+
+	/* We defer H2C in atomic context or rcu lock, so kmalloc with ATOMIC */
+	new = kmalloc(sizeof(*new), GFP_ATOMIC);
+	if (!new)
+		return true;
+
+	memcpy(new->cmd, cmd, sizeof(new->cmd));
+	INIT_LIST_HEAD(&new->list);
+	list_add_tail(&new->list, defer);
+
+	return true;
+}
+
+void rtw_fw_send_deferred_h2c_cmd(struct rtw_dev *rtwdev, struct list_head *defer)
+{
+	struct h2c_defer_list *h2c, *tmp;
+
+	list_for_each_entry_safe(h2c, tmp, defer, list) {
+		rtw_fw_send_h2c_command(rtwdev, h2c->cmd);
+
+		list_del(&h2c->list);
+		kfree(h2c);
+	}
+}
+
 static void rtw_fw_send_h2c_packet(struct rtw_dev *rtwdev, u8 *h2c_pkt)
 {
 	int ret;
@@ -469,13 +506,17 @@ void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_media_status_report(struct rtw_dev *rtwdev, u8 mac_id, bool connect)
+void rtw_fw_media_status_report(struct rtw_dev *rtwdev, u8 mac_id, bool connect,
+				struct list_head *defer)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 
 	SET_H2C_CMD_ID_CLASS(h2c_pkt, H2C_CMD_MEDIA_STATUS_RPT);
 	MEDIA_STATUS_RPT_SET_OP_MODE(h2c_pkt, connect);
 	MEDIA_STATUS_RPT_SET_MACID(h2c_pkt, mac_id);
+
+	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
+		return;
 
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
