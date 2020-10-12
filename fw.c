@@ -463,7 +463,8 @@ void rtw_fw_bt_wifi_control(struct rtw_dev *rtwdev, u8 op_code, u8 *data)
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
+void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
+			   struct list_head *defer)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 	u8 rssi = ewma_rssi_read(&si->avg_rssi);
@@ -474,6 +475,9 @@ void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 	SET_RSSI_INFO_MACID(h2c_pkt, si->mac_id);
 	SET_RSSI_INFO_RSSI(h2c_pkt, rssi);
 	SET_RSSI_INFO_STBC(h2c_pkt, stbc_en);
+
+	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
+		return;
 
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }

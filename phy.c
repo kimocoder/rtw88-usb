@@ -249,6 +249,7 @@ static u8 rtw_phy_get_rssi_level(u8 old_level, u8 rssi)
 struct rtw_phy_stat_iter_data {
 	struct rtw_dev *rtwdev;
 	u8 min_rssi;
+	struct list_head h2c_defer;
 };
 
 static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
@@ -261,7 +262,7 @@ static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
 	rssi = ewma_rssi_read(&si->avg_rssi);
 	si->rssi_level = rtw_phy_get_rssi_level(si->rssi_level, rssi);
 
-	rtw_fw_send_rssi_info(rtwdev, si);
+	rtw_fw_send_rssi_info(rtwdev, si, &iter_data->h2c_defer);
 
 	iter_data->min_rssi = min_t(u8, rssi, iter_data->min_rssi);
 }
@@ -273,7 +274,9 @@ static void rtw_phy_stat_rssi(struct rtw_dev *rtwdev)
 
 	data.rtwdev = rtwdev;
 	data.min_rssi = U8_MAX;
+	INIT_LIST_HEAD(&data.h2c_defer);
 	rtw_iterate_stas_atomic(rtwdev, rtw_phy_stat_rssi_iter, &data);
+	rtw_fw_send_deferred_h2c_cmd(rtwdev, &data.h2c_defer);
 
 	dm_info->pre_min_rssi = dm_info->min_rssi;
 	dm_info->min_rssi = data.min_rssi;
