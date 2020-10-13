@@ -14,6 +14,8 @@
 #include "ps.h"
 #include "usb.h"
 
+#define USE_ATOMIC 0
+
 #define RTW_USB_CONTROL_MSG_TIMEOUT	30000 /* (us) */
 #define RTW_USB_MSG_TIMEOUT	3000 /* (ms) */
 #define RTW_USB_MAX_RXQ_LEN	128
@@ -23,10 +25,14 @@ struct rtw_usb_txcb_t {
 	struct sk_buff_head tx_ack_queue;
 };
 
+#if USE_ATOMIC
+
 struct rtw_usb_ctrlcb_t {
 	bool done;
 	int status;
 };
+
+#endif
 
 /* RTW queue / pipe functions */
 static u8 rtw_usb_ac_to_hwq[] = {
@@ -51,6 +57,8 @@ static void rtw_usb_fill_tx_checksum(struct rtw_usb *rtwusb,
 	pkt_info.pkt_offset = GET_TX_DESC_PKT_OFFSET(skb->data);
 	rtw_tx_fill_txdesc_checksum(rtwdev, &pkt_info, skb->data);
 }
+
+#if USE_ATOMIC
 
 static void rtw_usb_ctrl_atomic_cb(struct urb *urb)
 {
@@ -237,7 +245,8 @@ static void rtw_usb_write32_atomic(struct rtw_dev *rtwdev, u32 addr, u32 val)
 	kfree(buf);
 }
 
-#if 0
+#else
+
 static u8 rtw_usb_read8(struct rtw_dev *rtwdev, u32 addr)
 {
 	struct rtw_usb *rtwusb = (struct rtw_usb *)rtwdev->priv;
@@ -1128,12 +1137,21 @@ static struct rtw_hci_ops rtw_usb_ops = {
 	.link_ps = rtw_usb_link_ps,
 	.interface_cfg = rtw_usb_interface_cfg,
 
+#if USE_ATOMIC
 	.read8 = rtw_usb_read8_atomic,
 	.read16 = rtw_usb_read16_atomic,
 	.read32 = rtw_usb_read32_atomic,
 	.write8 = rtw_usb_write8_atomic,
 	.write16 = rtw_usb_write16_atomic,
 	.write32 = rtw_usb_write32_atomic,
+#else
+	.read8 = rtw_usb_read8,
+	.read16 = rtw_usb_read16,
+	.read32 = rtw_usb_read32,
+	.write8 = rtw_usb_write8,
+	.write16 = rtw_usb_write16,
+	.write32 = rtw_usb_write32,
+#endif
 
 	.write_data_rsvd_page = rtw_usb_write_data_rsvd_page,
 	.write_data_h2c = rtw_usb_write_data_h2c,
