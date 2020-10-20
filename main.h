@@ -921,6 +921,11 @@ struct rtw_chip_ops {
 	void (*cfg_csi_rate)(struct rtw_dev *rtwdev, u8 rssi, u8 cur_rate,
 			     u8 fixrate_en, u8 *new_rate);
 
+	/* for USB/SDIO only */
+	void (*fill_txdesc_checksum)(struct rtw_dev *rtwdev,
+				     struct rtw_tx_pkt_info *pkt_info,
+				     u8 *txdesc);
+
 	/* for coex */
 	void (*coex_set_init)(struct rtw_dev *rtwdev);
 	void (*coex_set_ant_switch)(struct rtw_dev *rtwdev,
