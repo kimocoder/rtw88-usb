@@ -17,8 +17,9 @@
 #define USE_ATOMIC 0
 
 #define RTW_USB_CONTROL_MSG_TIMEOUT	30000 /* (us) */
-#define RTW_USB_MSG_TIMEOUT	3000 /* (ms) */
-#define RTW_USB_MAX_RXQ_LEN	128
+#define RTW_USB_MSG_TIMEOUT		3000 /* (ms) */
+#define RTW_USB_MAX_RXQ_LEN		128
+#define RTW_USB_HANDLER_CHECK_LOOPS	20
 
 struct rtw_usb_txcb_t {
 	struct rtw_dev *rtwdev;
@@ -586,7 +587,7 @@ static void rtw_usb_tx_handler(struct work_struct *work)
 
 	index = RTK_MAX_TX_QUEUE_NUM - 1;
 	for (index = RTK_MAX_TX_QUEUE_NUM - 1; index >= 0; index--) {
-		for (limit = 0; limit < 200; limit++) {
+		for (limit = 0; limit < RTW_USB_HANDLER_CHECK_LOOPS; limit++) {
 			skb = skb_dequeue(&rtwusb->tx_queue[index]);
 			if (skb)
 				rtw_usb_tx_agg(rtwusb, skb);
@@ -717,9 +718,10 @@ static void rtw_usb_txcb_ack(struct rtw_usb_txcb_t *txcb)
 	u8 qsel, queue;
 	int limit;
 
-	for (limit = 0; limit < 200; limit++) {
+	for (limit = 0; limit < RTW_USB_HANDLER_CHECK_LOOPS; limit++) {
 		skb = skb_dequeue(&txcb->tx_ack_queue);
-		if (!skb) break;
+		if (!skb)
+			break;
 
 		qsel = GET_TX_DESC_QSEL(skb->data);
 		queue = rtw_tx_qsel_to_queue(qsel);
@@ -945,9 +947,10 @@ static void rtw_usb_rx_handler(struct work_struct *work)
 	u8 *rx_desc;
 	int limit;
 
-	for (limit = 0; limit < 200; limit++) {
+	for (limit = 0; limit < RTW_USB_HANDLER_CHECK_LOOPS; limit++) {
 		skb = skb_dequeue(&rtwusb->rx_queue);
-		if (!skb) break;
+		if (!skb)
+			break;
 
 		rx_desc = skb->data;
 		chip->ops->query_rx_desc(rtwdev, rx_desc, &pkt_stat,
