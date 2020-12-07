@@ -9,7 +9,6 @@
 #include "fw.h"
 #include "phy.h"
 #include "debug.h"
-#include "regd.h"
 
 struct phy_cfg_pair {
 	u32 addr;
@@ -78,7 +77,6 @@ u8 rtw_vht_2s_rates[] = {
 	DESC_RATEVHT2SS_MCS6, DESC_RATEVHT2SS_MCS7,
 	DESC_RATEVHT2SS_MCS8, DESC_RATEVHT2SS_MCS9
 };
-
 u8 *rtw_rate_section[RTW_RATE_SECTION_MAX] = {
 	rtw_cck_rates, rtw_ofdm_rates,
 	rtw_ht_1s_rates, rtw_ht_2s_rates,
@@ -121,58 +119,6 @@ static void rtw_phy_cck_pd_init(struct rtw_dev *rtwdev)
 	dm_info->cck_fa_avg = CCK_FA_AVG_RESET;
 }
 
-void rtw_phy_set_edcca_th(struct rtw_dev *rtwdev, u8 l2h, u8 h2l)
-{
-	struct rtw_hw_reg_offset *edcca_th = rtwdev->chip->edcca_th;
-
-	rtw_write32_mask(rtwdev,
-			 edcca_th[EDCCA_TH_L2H_IDX].hw_reg.addr,
-			 edcca_th[EDCCA_TH_L2H_IDX].hw_reg.mask,
-			 l2h + edcca_th[EDCCA_TH_L2H_IDX].offset);
-	rtw_write32_mask(rtwdev,
-			 edcca_th[EDCCA_TH_H2L_IDX].hw_reg.addr,
-			 edcca_th[EDCCA_TH_H2L_IDX].hw_reg.mask,
-			 h2l + edcca_th[EDCCA_TH_H2L_IDX].offset);
-}
-EXPORT_SYMBOL(rtw_phy_set_edcca_th);
-
-void rtw_phy_adaptivity_set_mode(struct rtw_dev *rtwdev)
-{
-	struct rtw_chip_info *chip = rtwdev->chip;
-	struct rtw_dm_info *dm_info = &rtwdev->dm_info;
-
-	/* turn off in debugfs for debug usage */
-	if (!rtw_edcca_enabled) {
-		dm_info->edcca_mode = RTW_EDCCA_NORMAL;
-		rtw_dbg(rtwdev, RTW_DBG_PHY, "EDCCA disabled, cannot be set\n");
-		return;
-	}
-
-	switch (rtwdev->regd.region) {
-	case NL80211_DFS_ETSI:
-		dm_info->edcca_mode = RTW_EDCCA_ADAPTIVITY;
-		dm_info->l2h_th_ini = chip->l2h_th_ini_ad;
-		break;
-	case NL80211_DFS_JP:
-		dm_info->edcca_mode = RTW_EDCCA_ADAPTIVITY;
-		dm_info->l2h_th_ini = chip->l2h_th_ini_cs;
-		break;
-	default:
-		dm_info->edcca_mode = RTW_EDCCA_NORMAL;
-		break;
-	}
-}
-
-static void rtw_phy_adaptivity_init(struct rtw_dev *rtwdev)
-{
-	struct rtw_chip_info *chip = rtwdev->chip;
-
-	rtw_regd_init_dfs_region(rtwdev, rtwdev->regd.region);
-	rtw_phy_adaptivity_set_mode(rtwdev);
-	if (chip->ops->adaptivity_init)
-		chip->ops->adaptivity_init(rtwdev);
-}
-
 void rtw_phy_init(struct rtw_dev *rtwdev)
 {
 	struct rtw_chip_info *chip = rtwdev->chip;
@@ -194,7 +140,6 @@ void rtw_phy_init(struct rtw_dev *rtwdev)
 	rtw_phy_cck_pd_init(rtwdev);
 
 	dm_info->iqk.done = false;
-	rtw_phy_adaptivity_init(rtwdev);
 }
 EXPORT_SYMBOL(rtw_phy_init);
 
@@ -202,12 +147,13 @@ void rtw_phy_dig_write(struct rtw_dev *rtwdev, u8 igi)
 {
 	struct rtw_chip_info *chip = rtwdev->chip;
 	struct rtw_hal *hal = &rtwdev->hal;
-	const struct rtw_hw_reg *dig_cck = &chip->dig_cck[0];
 	u32 addr, mask;
 	u8 path;
 
-	if (dig_cck)
+	if (chip->dig_cck) {
+		const struct rtw_hw_reg *dig_cck = &chip->dig_cck[0];
 		rtw_write32_mask(rtwdev, dig_cck->addr, dig_cck->mask, igi >> 1);
+	}
 
 	for (path = 0; path < hal->rf_path_num; path++) {
 		addr = chip->dig[path].addr;
@@ -249,7 +195,6 @@ static u8 rtw_phy_get_rssi_level(u8 old_level, u8 rssi)
 struct rtw_phy_stat_iter_data {
 	struct rtw_dev *rtwdev;
 	u8 min_rssi;
-	struct list_head h2c_defer;
 };
 
 static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
@@ -262,7 +207,7 @@ static void rtw_phy_stat_rssi_iter(void *data, struct ieee80211_sta *sta)
 	rssi = ewma_rssi_read(&si->avg_rssi);
 	si->rssi_level = rtw_phy_get_rssi_level(si->rssi_level, rssi);
 
-	rtw_fw_send_rssi_info(rtwdev, si, &iter_data->h2c_defer);
+	rtw_fw_send_rssi_info(rtwdev, si);
 
 	iter_data->min_rssi = min_t(u8, rssi, iter_data->min_rssi);
 }
@@ -274,9 +219,7 @@ static void rtw_phy_stat_rssi(struct rtw_dev *rtwdev)
 
 	data.rtwdev = rtwdev;
 	data.min_rssi = U8_MAX;
-	INIT_LIST_HEAD(&data.h2c_defer);
 	rtw_iterate_stas_atomic(rtwdev, rtw_phy_stat_rssi_iter, &data);
-	rtw_fw_send_deferred_h2c_cmd(rtwdev, &data.h2c_defer);
 
 	dm_info->pre_min_rssi = dm_info->min_rssi;
 	dm_info->min_rssi = data.min_rssi;
@@ -506,32 +449,20 @@ static void rtw_phy_dig(struct rtw_dev *rtwdev)
 		rtw_phy_dig_write(rtwdev, cur_igi);
 }
 
-struct rtw_phy_ra_iter_data {
-	struct rtw_dev *rtwdev;
-	struct list_head h2c_defer;
-};
-
 static void rtw_phy_ra_info_update_iter(void *data, struct ieee80211_sta *sta)
 {
-	struct rtw_phy_ra_iter_data *ra_data = data;
-	struct rtw_dev *rtwdev = ra_data->rtwdev;
+	struct rtw_dev *rtwdev = data;
 	struct rtw_sta_info *si = (struct rtw_sta_info *)sta->drv_priv;
 
-	rtw_update_sta_info(rtwdev, si, &ra_data->h2c_defer);
+	rtw_update_sta_info(rtwdev, si);
 }
 
 static void rtw_phy_ra_info_update(struct rtw_dev *rtwdev)
 {
-	struct rtw_phy_ra_iter_data ra_data;
-
 	if (rtwdev->watch_dog_cnt & 0x3)
 		return;
 
-	ra_data.rtwdev = rtwdev;
-	INIT_LIST_HEAD(&ra_data.h2c_defer);
-
-	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, &ra_data);
-	rtw_fw_send_deferred_h2c_cmd(rtwdev, &ra_data.h2c_defer);
+	rtw_iterate_stas_atomic(rtwdev, rtw_phy_ra_info_update_iter, rtwdev);
 }
 
 static void rtw_phy_dpk_track(struct rtw_dev *rtwdev)
@@ -624,12 +555,6 @@ static void rtw_phy_pwr_track(struct rtw_dev *rtwdev)
 	rtwdev->chip->ops->pwr_track(rtwdev);
 }
 
-static void rtw_phy_adaptivity(struct rtw_dev *rtwdev)
-{
-	if (rtwdev->chip->ops->adaptivity)
-		rtwdev->chip->ops->adaptivity(rtwdev);
-}
-
 void rtw_phy_dynamic_mechanism(struct rtw_dev *rtwdev)
 {
 	/* for further calculation */
@@ -639,7 +564,6 @@ void rtw_phy_dynamic_mechanism(struct rtw_dev *rtwdev)
 	rtw_phy_ra_info_update(rtwdev);
 	rtw_phy_dpk_track(rtwdev);
 	rtw_phy_pwr_track(rtwdev);
-	rtw_phy_adaptivity(rtwdev);
 }
 
 #define FRAC_BITS 3
@@ -816,16 +740,14 @@ u32 rtw_phy_read_rf_sipi(struct rtw_dev *rtwdev, enum rtw_rf_path rf_path,
 
 	/* toggle read edge of path A */
 	val32 = rtw_read32(rtwdev, rf_sipi_addr_a->hssi_2);
-	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2,
-		    val32 & ~LSSI_READ_EDGE_MASK);
-	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2,
-		    val32 | LSSI_READ_EDGE_MASK);
+	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2, val32 & ~LSSI_READ_EDGE_MASK);
+	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2, val32 | LSSI_READ_EDGE_MASK);
 
 	udelay(120);
 
 	en_pi = rtw_read32_mask(rtwdev, rf_sipi_addr->hssi_1, BIT(8));
-	r_addr = en_pi ? rf_sipi_addr->lssi_read_pi
-		       : rf_sipi_addr->lssi_read;
+	r_addr = en_pi ? rf_sipi_addr->lssi_read_pi : rf_sipi_addr->lssi_read;
+
 	val32 = rtw_read32_mask(rtwdev, r_addr, LSSI_READ_DATA_MASK);
 
 	shift = __ffs(mask);
@@ -1601,7 +1523,7 @@ static u8 rtw_get_channel_group(u8 channel)
 	switch (channel) {
 	default:
 		WARN_ON(1);
-		/* fall through */
+		fallthrough;
 	case 1:
 	case 2:
 	case 36:
@@ -1747,7 +1669,7 @@ static u8 rtw_phy_get_2g_tx_power_index(struct rtw_dev *rtwdev,
 	switch (bandwidth) {
 	default:
 		WARN_ON(1);
-		/* fall through */
+		fallthrough;
 	case RTW_CHANNEL_WIDTH_20:
 		tx_power += pwr_idx_2g->ht_1s_diff.bw20 * factor;
 		if (above_2ss)
@@ -1791,7 +1713,7 @@ static u8 rtw_phy_get_5g_tx_power_index(struct rtw_dev *rtwdev,
 	switch (bandwidth) {
 	default:
 		WARN_ON(1);
-		/* fall through */
+		fallthrough;
 	case RTW_CHANNEL_WIDTH_20:
 		tx_power += pwr_idx_5g->ht_1s_diff.bw20 * factor;
 		if (above_2ss)

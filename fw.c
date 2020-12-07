@@ -193,13 +193,22 @@ void rtw_fw_c2h_cmd_rx_irqsafe(struct rtw_dev *rtwdev, u32 pkt_offset,
 }
 EXPORT_SYMBOL(rtw_fw_c2h_cmd_rx_irqsafe);
 
+void rtw_fw_c2h_cmd_isr(struct rtw_dev *rtwdev)
+{
+	if (rtw_read8(rtwdev, REG_MCU_TST_CFG) == VAL_FW_TRIGGER)
+		rtw_fw_recovery(rtwdev);
+	else
+		rtw_warn(rtwdev, "unhandled firmware c2h interrupt\n");
+}
+EXPORT_SYMBOL(rtw_fw_c2h_cmd_isr);
+
 static void rtw_fw_send_h2c_command(struct rtw_dev *rtwdev,
 				    u8 *h2c)
 {
-	struct rtw_h2c_cmd *h2c_cmd = (struct rtw_h2c_cmd *)h2c;
 	u8 box;
 	u8 box_state;
 	u32 box_reg, box_ex_reg;
+	int idx;
 	int ret;
 
 	rtw_dbg(rtwdev, RTW_DBG_FW,
@@ -207,7 +216,7 @@ static void rtw_fw_send_h2c_command(struct rtw_dev *rtwdev,
 		h2c[3], h2c[2], h2c[1], h2c[0],
 		h2c[7], h2c[6], h2c[5], h2c[4]);
 
-	mutex_lock(&rtwdev->h2c.lock);
+	spin_lock(&rtwdev->h2c.lock);
 
 	box = rtwdev->h2c.last_box_num;
 	switch (box) {
@@ -233,59 +242,24 @@ static void rtw_fw_send_h2c_command(struct rtw_dev *rtwdev,
 	}
 
 	ret = read_poll_timeout_atomic(rtw_read8, box_state,
-				       !((box_state >> box) & 0x1), 100,
-				       3000, false, rtwdev, REG_HMETFR);
+				       !((box_state >> box) & 0x1), 100, 3000,
+				       false, rtwdev, REG_HMETFR);
 
 	if (ret) {
 		rtw_err(rtwdev, "failed to send h2c command\n");
 		goto out;
 	}
 
-	rtw_write32(rtwdev, box_ex_reg, le32_to_cpu(h2c_cmd->msg_ext));
-	rtw_write32(rtwdev, box_reg, le32_to_cpu(h2c_cmd->msg));
+	for (idx = 0; idx < 4; idx++)
+		rtw_write8(rtwdev, box_reg + idx, h2c[idx]);
+	for (idx = 0; idx < 4; idx++)
+		rtw_write8(rtwdev, box_ex_reg + idx, h2c[idx + 4]);
 
 	if (++rtwdev->h2c.last_box_num >= 4)
 		rtwdev->h2c.last_box_num = 0;
 
 out:
-	mutex_unlock(&rtwdev->h2c.lock);
-}
-
-struct h2c_defer_list {
-	struct list_head list;
-	u8 cmd [H2C_PKT_SIZE];
-};
-
-static bool rtw_fw_defer_h2c_cmd(struct rtw_dev *rtwdev, const u8 *cmd,
-				 struct list_head *defer)
-{
-	struct h2c_defer_list *new;
-
-	if (!defer)
-		return false;
-
-	/* We defer H2C in atomic context or rcu lock, so kmalloc with ATOMIC */
-	new = kmalloc(sizeof(*new), GFP_ATOMIC);
-	if (!new)
-		return true;
-
-	memcpy(new->cmd, cmd, sizeof(new->cmd));
-	INIT_LIST_HEAD(&new->list);
-	list_add_tail(&new->list, defer);
-
-	return true;
-}
-
-void rtw_fw_send_deferred_h2c_cmd(struct rtw_dev *rtwdev, struct list_head *defer)
-{
-	struct h2c_defer_list *h2c, *tmp;
-
-	list_for_each_entry_safe(h2c, tmp, defer, list) {
-		rtw_fw_send_h2c_command(rtwdev, h2c->cmd);
-
-		list_del(&h2c->list);
-		kfree(h2c);
-	}
+	spin_unlock(&rtwdev->h2c.lock);
 }
 
 void rtw_fw_h2c_cmd_dbg(struct rtw_dev *rtwdev, u8 *h2c)
@@ -297,7 +271,7 @@ static void rtw_fw_send_h2c_packet(struct rtw_dev *rtwdev, u8 *h2c_pkt)
 {
 	int ret;
 
-	mutex_lock(&rtwdev->h2c.lock);
+	spin_lock(&rtwdev->h2c.lock);
 
 	FW_OFFLOAD_H2C_SET_SEQ_NUM(h2c_pkt, rtwdev->h2c.seq);
 	ret = rtw_hci_write_data_h2c(rtwdev, h2c_pkt, H2C_PKT_SIZE);
@@ -305,7 +279,7 @@ static void rtw_fw_send_h2c_packet(struct rtw_dev *rtwdev, u8 *h2c_pkt)
 		rtw_err(rtwdev, "failed to send h2c packet\n");
 	rtwdev->h2c.seq++;
 
-	mutex_unlock(&rtwdev->h2c.lock);
+	spin_unlock(&rtwdev->h2c.lock);
 }
 
 void
@@ -468,8 +442,7 @@ void rtw_fw_bt_wifi_control(struct rtw_dev *rtwdev, u8 op_code, u8 *data)
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
-			   struct list_head *defer)
+void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 	u8 rssi = ewma_rssi_read(&si->avg_rssi);
@@ -481,14 +454,10 @@ void rtw_fw_send_rssi_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
 	SET_RSSI_INFO_RSSI(h2c_pkt, rssi);
 	SET_RSSI_INFO_STBC(h2c_pkt, stbc_en);
 
-	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
-		return;
-
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
-			 struct list_head *defer)
+void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 	bool no_update = si->updated;
@@ -513,23 +482,16 @@ void rtw_fw_send_ra_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si,
 	si->init_ra_lv = 0;
 	si->updated = true;
 
-	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
-		return;
-
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
 
-void rtw_fw_media_status_report(struct rtw_dev *rtwdev, u8 mac_id, bool connect,
-				struct list_head *defer)
+void rtw_fw_media_status_report(struct rtw_dev *rtwdev, u8 mac_id, bool connect)
 {
 	u8 h2c_pkt[H2C_PKT_SIZE] = {0};
 
 	SET_H2C_CMD_ID_CLASS(h2c_pkt, H2C_CMD_MEDIA_STATUS_RPT);
 	MEDIA_STATUS_RPT_SET_OP_MODE(h2c_pkt, connect);
 	MEDIA_STATUS_RPT_SET_MACID(h2c_pkt, mac_id);
-
-	if (rtw_fw_defer_h2c_cmd(rtwdev, h2c_pkt, defer))
-		return;
 
 	rtw_fw_send_h2c_command(rtwdev, h2c_pkt);
 }
@@ -1451,29 +1413,16 @@ free:
 	return ret;
 }
 
-int rtw_dump_drv_rsvd_page(struct rtw_dev *rtwdev,
-			   u32 offset, u32 size, u32 *buf)
+static void rtw_fw_read_fifo_page(struct rtw_dev *rtwdev, u32 offset, u32 size,
+				  u32 *buf, u32 residue, u16 start_pg)
 {
-	struct rtw_fifo_conf *fifo = &rtwdev->fifo;
-	u32 residue, i;
-	u16 start_pg;
+	u32 i;
 	u16 idx = 0;
 	u16 ctl;
 	u8 rcr;
 
-	if (size & 0x3) {
-		rtw_warn(rtwdev, "should be 4-byte aligned\n");
-		return -EINVAL;
-	}
-
-	offset += fifo->rsvd_boundary << TX_PAGE_SIZE_SHIFT;
-	residue = offset & (FIFO_PAGE_SIZE - 1);
-	start_pg = offset >> FIFO_PAGE_SIZE_SHIFT;
-	start_pg += RSVD_PAGE_START_ADDR;
-
 	rcr = rtw_read8(rtwdev, REG_RCR + 2);
 	ctl = rtw_read16(rtwdev, REG_PKTBUF_DBG_CTRL) & 0xf000;
-
 	/* disable rx clock gate */
 	rtw_write8(rtwdev, REG_RCR, rcr | BIT(3));
 
@@ -1495,6 +1444,64 @@ int rtw_dump_drv_rsvd_page(struct rtw_dev *rtwdev,
 out:
 	rtw_write16(rtwdev, REG_PKTBUF_DBG_CTRL, ctl);
 	rtw_write8(rtwdev, REG_RCR + 2, rcr);
+}
+
+static void rtw_fw_read_fifo(struct rtw_dev *rtwdev, enum rtw_fw_fifo_sel sel,
+			     u32 offset, u32 size, u32 *buf)
+{
+	struct rtw_chip_info *chip = rtwdev->chip;
+	u32 start_pg, residue;
+
+	if (sel >= RTW_FW_FIFO_MAX) {
+		rtw_dbg(rtwdev, RTW_DBG_FW, "wrong fw fifo sel\n");
+		return;
+	}
+	if (sel == RTW_FW_FIFO_SEL_RSVD_PAGE)
+		offset += rtwdev->fifo.rsvd_boundary << TX_PAGE_SIZE_SHIFT;
+	residue = offset & (FIFO_PAGE_SIZE - 1);
+	start_pg = (offset >> FIFO_PAGE_SIZE_SHIFT) + chip->fw_fifo_addr[sel];
+
+	rtw_fw_read_fifo_page(rtwdev, offset, size, buf, residue, start_pg);
+}
+
+static bool rtw_fw_dump_check_size(struct rtw_dev *rtwdev,
+				   enum rtw_fw_fifo_sel sel,
+				   u32 start_addr, u32 size)
+{
+	switch (sel) {
+	case RTW_FW_FIFO_SEL_TX:
+	case RTW_FW_FIFO_SEL_RX:
+		if ((start_addr + size) > rtwdev->chip->fw_fifo_addr[sel])
+			return false;
+		/*fall through*/
+	default:
+		return true;
+	}
+}
+
+int rtw_fw_dump_fifo(struct rtw_dev *rtwdev, u8 fifo_sel, u32 addr, u32 size,
+		     u32 *buffer)
+{
+	if (!rtwdev->chip->fw_fifo_addr) {
+		rtw_dbg(rtwdev, RTW_DBG_FW, "chip not support dump fw fifo\n");
+		return -ENOTSUPP;
+	}
+
+	if (size == 0 || !buffer)
+		return -EINVAL;
+
+	if (size & 0x3) {
+		rtw_dbg(rtwdev, RTW_DBG_FW, "not 4byte alignment\n");
+		return -EINVAL;
+	}
+
+	if (!rtw_fw_dump_check_size(rtwdev, fifo_sel, addr, size)) {
+		rtw_dbg(rtwdev, RTW_DBG_FW, "fw fifo dump size overflow\n");
+		return -EINVAL;
+	}
+
+	rtw_fw_read_fifo(rtwdev, fifo_sel, addr, size, buffer);
+
 	return 0;
 }
 
