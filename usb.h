@@ -101,7 +101,7 @@ static inline struct rtw_usb_tx_data *rtw_usb_get_tx_data(struct sk_buff *skb)
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 	BUILD_BUG_ON(sizeof(struct rtw_usb_tx_data) >
-		sizeof(info->status.status_driver_data));
+		     sizeof(info->status.status_driver_data));
 
 	return (struct rtw_usb_tx_data *)info->status.status_driver_data;
 }
