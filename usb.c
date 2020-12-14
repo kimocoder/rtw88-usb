@@ -17,7 +17,7 @@
 #define RTW_USB_CONTROL_MSG_TIMEOUT	30000 /* (us) */
 #define RTW_USB_MSG_TIMEOUT		3000 /* (ms) */
 #define RTW_USB_MAX_RXQ_LEN		128
-#define RTW_USB_HANDLER_CHECK_LOOPS	20
+#define RTW_USB_HANDLER_CHECK_LOOPS	10
 
 struct rtw_usb_txcb_t {
 	struct rtw_dev *rtwdev;
