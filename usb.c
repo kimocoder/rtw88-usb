@@ -242,6 +242,7 @@ static void rtw_usb_write32_atomic(struct rtw_dev *rtwdev, u32 addr, u32 val)
 	kfree(buf);
 }
 
+#if 0
 static u8 rtw_usb_read8(struct rtw_dev *rtwdev, u32 addr)
 {
 	struct rtw_usb *rtwusb = (struct rtw_usb *)rtwdev->priv;
@@ -358,6 +359,7 @@ static void rtw_usb_write32(struct rtw_dev *rtwdev, u32 addr, u32 val)
 			RTW_USB_CONTROL_MSG_TIMEOUT);
 	kfree(buf);
 }
+#endif
 
 static int rtw_usb_parse(struct rtw_dev *rtwdev,
 			 struct usb_interface *interface)
@@ -1200,12 +1202,12 @@ static struct rtw_hci_ops rtw_usb_ops = {
 	.link_ps = rtw_usb_link_ps,
 	.interface_cfg = rtw_usb_interface_cfg,
 
-	.read8 = rtw_usb_read8,
-	.read16 = rtw_usb_read16,
-	.read32 = rtw_usb_read32,
-	.write8 = rtw_usb_write8,
-	.write16 = rtw_usb_write16,
-	.write32 = rtw_usb_write32,
+	.read8 = rtw_usb_read8_atomic,
+	.read16 = rtw_usb_read16_atomic,
+	.read32 = rtw_usb_read32_atomic,
+	.write8 = rtw_usb_write8_atomic,
+	.write16 = rtw_usb_write16_atomic,
+	.write32 = rtw_usb_write32_atomic,
 
 	.read8_atomic = rtw_usb_read8_atomic,
 	.read16_atomic = rtw_usb_read16_atomic,
