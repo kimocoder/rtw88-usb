@@ -507,6 +507,7 @@ static int rtw_usb_write_port(struct rtw_dev *rtwdev, u8 addr, u32 cnt,
 	if (!urb)
 		return -ENOMEM;
 
+	urb->transfer_flags |= URB_ZERO_PACKET;
 	usb_fill_bulk_urb(urb, usbd, pipe, skb->data, (int)cnt,
 			  cb, context);
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
