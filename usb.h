@@ -38,8 +38,6 @@
 #define REG_SYS_CFG2		0x00FC
 #define REG_USB_USBSTAT		0xFE11
 #define REG_RXDMA_MODE		0x785
-#define REG_TXDMA_OFFSET_CHK	0x20C
-#define BIT_DROP_DATA_EN	BIT(9)
 
 /* USB Vendor/Product IDs */
 #define RTW_USB_VENDOR_ID_REALTEK		0x0BDA
@@ -103,6 +101,9 @@ struct rtw_usb {
 	u8 queue_to_pipe[8];
 	u8 usb_speed;
 	u8 usb_txagg_num;
+	u8 rxagg_mode;
+	u8 rxagg_size;
+	u8 rxagg_timeout;
 
 	atomic_t is_bus_drv_ready;
 

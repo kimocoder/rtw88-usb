@@ -11,6 +11,7 @@
 #include "rx.h"
 #include "fw.h"
 #include "usb.h"
+#include "reg.h"
 
 #define RTW_USB_CONTROL_MSG_TIMEOUT	30000 /* (us) */
 #define RTW_USB_MSG_TIMEOUT	30000 /* (ms) */
@@ -609,10 +610,75 @@ static void rtw_usb_set_queue_pipe_mapping(struct rtw_dev *rtwdev, u8 in_pipes,
 	}
 }
 
+#if 0
+static void rtw_usb_config_rxagg(struct rtw_dev *rtwdev)
+{
+	struct rtw_usb *rtwusb = rtw_get_usb_priv(rtwdev);
+	u8 dma_usb_agg;
+	u8 agg_enable;
+	u32 val32;
+
+	rtw_info(rtwdev, "%s ==>\n", __func__);
+
+	dma_usb_agg = rtw_usb_read8_atomic(rtwdev, REG_RXDMA_AGG_PG_TH + 3);
+	agg_enable = rtw_usb_read8_atomic(rtwdev, REG_TXDMA_PQ_MAP);
+
+	/* RX AGG MODE USB */
+	dma_usb_agg &= ~BIT(7);
+	agg_enable |= BIT_RXDMA_AGG_EN;
+
+	if (rtw_usb_read8_atomic(rtwdev, REG_SYS_CFG2 + 3) == 0x20) {
+		rtw_info(rtwdev, "USB 3.0\n");
+		/* USB 3 */
+		rtwusb->rxagg_size = 5;
+		rtwusb->rxagg_timeout = 10;
+	} else {
+		rtw_info(rtwdev, "USB 2\n");
+		/* USB 2 */
+		rtwusb->rxagg_size = 5;
+		rtwusb->rxagg_timeout = 20;
+	}
+
+	val32 = rtw_usb_read32_atomic(rtwdev, REG_RXDMA_AGG_PG_TH);
+	rtw_usb_write32_atomic(rtwdev, REG_RXDMA_AGG_PG_TH, val32 | BIT_EN_PRE_CALC);
+
+	rtw_usb_write8_atomic(rtwdev, REG_TXDMA_PQ_MAP, agg_enable);
+	rtw_usb_write8_atomic(rtwdev, REG_RXDMA_AGG_PG_TH + 3, dma_usb_agg);
+	rtw_usb_write16_atomic(rtwdev, REG_RXDMA_AGG_PG_TH,
+			       (u16)(rtwusb->rxagg_size |
+			       (rtwusb->rxagg_timeout << BIT_SHIFT_DMA_AGG)));
+}
+#endif
+
+static void rtw_usb_switch_mode(struct rtw_dev *rtwdev)
+{
+	u32 usb_status;
+
+	if (rtw_usb_read8_atomic(rtwdev, REG_SYS_CFG2 + 3) == 0x20)
+		rtw_info(rtwdev, "current usb U3\n");
+	else
+		rtw_info(rtwdev, "current usb U2\n");
+
+	usb_status = rtw_usb_read32_atomic(rtwdev, REG_PAD_CTRL2);
+	if (((usb_status >> 18) & 0x3) == 0) {
+		rtw_info(rtwdev, "not support USB switch\n");
+		return;
+	}
+
+	/* TODO */
+}
+
 static void rtw_usb_interface_configure(struct rtw_dev *rtwdev)
 {
 	struct rtw_chip_info *chip = rtwdev->chip;
 	struct rtw_usb *rtwusb = rtw_get_usb_priv(rtwdev);
+
+	if (RTW_USB_IS_HIGH_SPEED(rtwusb)) {
+		/* switch from U2 to U3 */
+		rtw_usb_switch_mode(rtwdev);
+	} else {
+		rtw_info(rtwdev, "In USB3 already\n");
+	}
 
 	if (RTW_USB_IS_SUPER_SPEED(rtwusb))
 		rtwusb->bulkout_size = RTW_USB_SUPER_SPEED_BULK_SIZE;
@@ -990,37 +1056,66 @@ static void rtw_usb_rx_handler(struct work_struct *work)
 	struct rtw_chip_info *chip = rtwdev->chip;
 	struct rtw_rx_pkt_stat pkt_stat;
 	struct ieee80211_rx_status rx_status;
-	struct sk_buff *skb;
+	struct sk_buff *skb_head, *skb;
 	u32 pkt_desc_sz = chip->rx_pkt_desc_sz;
 	u32 pkt_offset;
-	u8 *rx_desc;
+	u8 *rxdesc;
+	int size;
+	int queue_len;
 
-	while ((skb = skb_dequeue(&rtwusb->rx_queue)) != NULL) {
-		rx_desc = skb->data;
-		chip->ops->query_rx_desc(rtwdev, rx_desc, &pkt_stat,
-					 &rx_status);
-		pkt_offset = pkt_desc_sz + pkt_stat.drv_info_sz +
-			     pkt_stat.shift;
+	while ((skb_head = skb_dequeue(&rtwusb->rx_queue)) != NULL) {
+		rxdesc = skb_head->data;
+		while (skb_head->len > 0) {
+			chip->ops->query_rx_desc(rtwdev, rxdesc, &pkt_stat,
+						 &rx_status);
+			pkt_offset = pkt_desc_sz + pkt_stat.drv_info_sz +
+				     pkt_stat.shift;
 
-		if (pkt_stat.is_c2h) {
-			skb_put(skb, pkt_stat.pkt_len + pkt_offset);
-			*((u32 *)skb->cb) = pkt_offset;
-			rtw_fw_c2h_cmd_handle(rtwdev, skb);
-			dev_kfree_skb(skb);
-			continue;
+			size = pkt_offset + pkt_stat.pkt_len;
+			if (size > skb_head->len) {
+				rtw_info(rtwdev, "RX AGG overflow, size:%d(offset:%d, len:%d, space:%d\n",
+					 size, pkt_offset, pkt_stat.pkt_len, skb_head->len);
+			}
+
+			skb = skb_clone(skb_head, GFP_ATOMIC);
+			if (!skb) {
+				rtw_info(rtwdev, "%s: skb_clone failed\n", __func__);
+				goto out;
+			}
+			skb->tail -= skb->len;
+			skb->len = 0;
+
+			queue_len = skb_queue_len(&rtwusb->rx_queue);
+			if (queue_len >= RTW_USB_MAX_RXQ_LEN) {
+				rtw_err(rtwdev, "rx_queue overflow - drop\n");
+				dev_kfree_skb(skb);
+				goto out;
+			}
+
+			if (pkt_stat.is_c2h) {
+				skb_put(skb, size);
+				*((u32 *)skb->cb) = pkt_offset;
+				rtw_fw_c2h_cmd_handle(rtwdev, skb);
+				dev_kfree_skb(skb);
+			} else {
+				skb_reserve(skb, pkt_offset);
+				skb_put(skb, pkt_stat.pkt_len);
+				memcpy(skb->cb, &rx_status, sizeof(rx_status));
+				ieee80211_rx_irqsafe(rtwdev->hw, skb);
+			}
+
+			if (size > skb_head->len) {
+				rtw_info(rtwdev, "RX AGG overflow: size(%d) > len(%d)\n",
+					 size, skb_head->len);
+				goto out;
+			}
+
+			rxdesc = skb_pull(skb_head, ALIGN(size, 8));
+			if (!rxdesc)
+				goto out;
 		}
-
-		if (skb_queue_len(&rtwusb->rx_queue) >= RTW_USB_MAX_RXQ_LEN) {
-			rtw_err(rtwdev, "failed to get rx_queue, overflow\n");
-			dev_kfree_skb(skb);
-			continue;
-		}
-
-		skb_put(skb, pkt_stat.pkt_len);
-		skb_reserve(skb, pkt_offset);
-
-		memcpy(skb->cb, &rx_status, sizeof(rx_status));
-		ieee80211_rx_irqsafe(rtwdev->hw, skb);
+out:
+		dev_kfree_skb(skb_head);
 	}
 }
 
@@ -1041,6 +1136,7 @@ static void rtw_usb_read_port_complete(struct urb *urb)
 			if (skb)
 				dev_kfree_skb_any(skb);
 		} else {
+			skb_put(skb, urb->actual_length);
 			skb_queue_tail(&rtwusb->rx_queue, skb);
 			queue_work(rtwusb->rxwq,
 				   &rtwusb->rx_handler_data->work);
@@ -1192,6 +1288,12 @@ static void rtw_usb_interface_cfg(struct rtw_dev *rtwdev)
 	/* empty function for rtw_hci_ops */
 }
 
+static void rtw_usb_config_after_connected(struct rtw_dev *rtwdev)
+{
+	/* RX AGG */
+	//rtw_usb_config_rxagg(rtwdev);
+}
+
 static struct rtw_hci_ops rtw_usb_ops = {
 	.tx_write = rtw_usb_tx_write,
 	.tx_kick_off = rtw_usb_tx_kick_off,
@@ -1201,6 +1303,7 @@ static struct rtw_hci_ops rtw_usb_ops = {
 	.deep_ps = rtw_usb_deep_ps,
 	.link_ps = rtw_usb_link_ps,
 	.interface_cfg = rtw_usb_interface_cfg,
+	.config_after_connected = rtw_usb_config_after_connected,
 
 	.read8 = rtw_usb_read8_atomic,
 	.read16 = rtw_usb_read16_atomic,

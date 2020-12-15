@@ -464,6 +464,8 @@ static int rtw_ops_sta_add(struct ieee80211_hw *hw,
 	rtw_info(rtwdev, "sta %pM joined with macid %d\n",
 		 sta->addr, si->mac_id);
 
+	rtw_hci_config_after_connected(rtwdev);
+
 out:
 	mutex_unlock(&rtwdev->mutex);
 	return ret;
