@@ -7,7 +7,7 @@
 
 #define RTK_TX_MAX_AGG_NUM_MASK		0x1f
 
-#define RTW_TX_PROBE_TIMEOUT		msecs_to_jiffies(500)
+#define RTW_TX_PROBE_TIMEOUT		msecs_to_jiffies(1000)
 
 #define SET_TX_DESC_TXPKTSIZE(txdesc, value)                                   \
 	le32p_replace_bits((__le32 *)(txdesc) + 0x00, value, GENMASK(15, 0))

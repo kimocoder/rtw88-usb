@@ -294,6 +294,8 @@ int rtw_sta_add(struct rtw_dev *rtwdev, struct ieee80211_sta *sta,
 	rtw_info(rtwdev, "sta %pM joined with macid %d\n",
 		 sta->addr, si->mac_id);
 
+	rtw_hci_config_after_connected(rtwdev);
+
 	return 0;
 }
 
