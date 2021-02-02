@@ -10,7 +10,6 @@
 void rtw_bf_disassoc(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 		     struct ieee80211_bss_conf *bss_conf)
 {
-	struct rtw_chip_info *chip = rtwdev->chip;
 	struct rtw_vif *rtwvif = (struct rtw_vif *)vif->drv_priv;
 	struct rtw_bfee *bfee = &rtwvif->bfee;
 	struct rtw_bf_info *bfinfo = &rtwdev->bf_info;
@@ -23,7 +22,7 @@ void rtw_bf_disassoc(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 	else if (bfee->role == RTW_BFEE_SU)
 		bfinfo->bfer_su_cnt--;
 
-	chip->ops->config_bfee(rtwdev, rtwvif, bfee, false);
+	rtw_chip_config_bfee(rtwdev, rtwvif, bfee, false);
 
 	bfee->role = RTW_BFEE_NONE;
 }
@@ -52,19 +51,17 @@ void rtw_bf_assoc(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 	if (!sta) {
 		rtw_warn(rtwdev, "failed to find station entry for bss %pM\n",
 			 bssid);
-		rcu_read_unlock();
-		return;
+		goto out_unlock;
 	}
 
 	ic_vht_cap = &hw->wiphy->bands[NL80211_BAND_5GHZ]->vht_cap;
 	vht_cap = &sta->vht_cap;
-	rcu_read_unlock();
 
 	if ((ic_vht_cap->cap & IEEE80211_VHT_CAP_MU_BEAMFORMEE_CAPABLE) &&
 	    (vht_cap->cap & IEEE80211_VHT_CAP_MU_BEAMFORMER_CAPABLE)) {
 		if (bfinfo->bfer_mu_cnt >= chip->bfer_mu_max_num) {
 			rtw_dbg(rtwdev, RTW_DBG_BF, "mu bfer number over limit\n");
-			return;
+			goto out_unlock;
 		}
 
 		ether_addr_copy(bfee->mac_addr, bssid);
@@ -73,13 +70,12 @@ void rtw_bf_assoc(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 		bfee->aid = bss_conf->aid;
 		bfinfo->bfer_mu_cnt++;
 
-		chip->ops->config_bfee(rtwdev, rtwvif, bfee, true);
-	} else if ((ic_vht_cap->cap &
-		    IEEE80211_VHT_CAP_SU_BEAMFORMEE_CAPABLE) &&
+		rtw_chip_config_bfee(rtwdev, rtwvif, bfee, true);
+	} else if ((ic_vht_cap->cap & IEEE80211_VHT_CAP_SU_BEAMFORMEE_CAPABLE) &&
 		   (vht_cap->cap & IEEE80211_VHT_CAP_SU_BEAMFORMER_CAPABLE)) {
 		if (bfinfo->bfer_su_cnt >= chip->bfer_su_max_num) {
 			rtw_dbg(rtwdev, RTW_DBG_BF, "su bfer number over limit\n");
-			return;
+			goto out_unlock;
 		}
 
 		sound_dim = vht_cap->cap &
@@ -100,8 +96,11 @@ void rtw_bf_assoc(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 			}
 		}
 
-		chip->ops->config_bfee(rtwdev, rtwvif, bfee, true);
+		rtw_chip_config_bfee(rtwdev, rtwvif, bfee, true);
 	}
+
+out_unlock:
+	rcu_read_unlock();
 }
 
 void rtw_bf_init_bfer_entry_mu(struct rtw_dev *rtwdev,
@@ -184,7 +183,7 @@ void rtw_bf_del_sounding(struct rtw_dev *rtwdev)
 void rtw_bf_enable_bfee_su(struct rtw_dev *rtwdev, struct rtw_vif *vif,
 			   struct rtw_bfee *bfee)
 {
-	u8 nc_index = 1;
+	u8 nc_index = hweight8(rtwdev->hal.antenna_rx) - 1;
 	u8 nr_index = bfee->sound_dim;
 	u8 grouping = 0, codebookinfo = 1, coefficientsize = 3;
 	u32 addr_bfer_info, addr_csi_rpt, csi_param;
@@ -221,6 +220,7 @@ void rtw_bf_enable_bfee_su(struct rtw_dev *rtwdev, struct rtw_vif *vif,
 	/* ndp rx standby timer */
 	rtw_write8(rtwdev, REG_SND_PTCL_CTRL + 3, RTW_NDP_RX_STANDBY_TIME);
 }
+EXPORT_SYMBOL(rtw_bf_enable_bfee_su);
 
 /* nc index: 1 2T2R 0 1T1R
  * nr index: 1 use Nsts 0 use reg setting
@@ -231,7 +231,8 @@ void rtw_bf_enable_bfee_mu(struct rtw_dev *rtwdev, struct rtw_vif *vif,
 {
 	struct rtw_bf_info *bf_info = &rtwdev->bf_info;
 	struct mu_bfer_init_para param;
-	u8 nc_index = 1, nr_index = 1;
+	u8 nc_index = hweight8(rtwdev->hal.antenna_rx) - 1;
+	u8 nr_index = 1;
 	u8 grouping = 0, codebookinfo = 1, coefficientsize = 0;
 	u32 csi_param;
 
@@ -264,6 +265,7 @@ void rtw_bf_enable_bfee_mu(struct rtw_dev *rtwdev, struct rtw_vif *vif,
 	/* accept NDPA and BF report poll */
 	rtw_write16_set(rtwdev, REG_RXFLTMAP1, BIT_RXFLTMAP1_BF);
 }
+EXPORT_SYMBOL(rtw_bf_enable_bfee_mu);
 
 void rtw_bf_remove_bfee_su(struct rtw_dev *rtwdev,
 			   struct rtw_bfee *bfee)
@@ -289,6 +291,7 @@ void rtw_bf_remove_bfee_su(struct rtw_dev *rtwdev,
 	clear_bit(bfee->su_reg_index, bfinfo->bfer_su_reg_maping);
 	bfee->su_reg_index = 0xFF;
 }
+EXPORT_SYMBOL(rtw_bf_remove_bfee_su);
 
 void rtw_bf_remove_bfee_mu(struct rtw_dev *rtwdev,
 			   struct rtw_bfee *bfee)
@@ -302,6 +305,7 @@ void rtw_bf_remove_bfee_mu(struct rtw_dev *rtwdev,
 	if (bfinfo->bfer_su_cnt == 0 && bfinfo->bfer_mu_cnt == 0)
 		rtw_bf_del_sounding(rtwdev);
 }
+EXPORT_SYMBOL(rtw_bf_remove_bfee_mu);
 
 void rtw_bf_set_gid_table(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 			  struct ieee80211_bss_conf *conf)
@@ -330,6 +334,7 @@ void rtw_bf_set_gid_table(struct rtw_dev *rtwdev, struct ieee80211_vif *vif,
 
 	rtw_bf_cfg_mu_bfee(rtwdev, &param);
 }
+EXPORT_SYMBOL(rtw_bf_set_gid_table);
 
 void rtw_bf_phy_init(struct rtw_dev *rtwdev)
 {
@@ -366,6 +371,7 @@ void rtw_bf_phy_init(struct rtw_dev *rtwdev)
 	rtw_write32_mask(rtwdev, REG_BBPSF_CTRL, BIT_MASK_CSI_RATE,
 			 DESC_RATE6M);
 }
+EXPORT_SYMBOL(rtw_bf_phy_init);
 
 void rtw_bf_cfg_csi_rate(struct rtw_dev *rtwdev, u8 rssi, u8 cur_rate,
 			 u8 fixrate_en, u8 *new_rate)
@@ -381,6 +387,8 @@ void rtw_bf_cfg_csi_rate(struct rtw_dev *rtwdev, u8 rssi, u8 cur_rate,
 			cur_rrsr |= BIT(DESC_RATE54M);
 			csi_cfg |= (DESC_RATE54M & BIT_MASK_CSI_RATE_VAL) <<
 				   BIT_SHIFT_CSI_RATE;
+			rtw_write16(rtwdev, REG_RRSR, cur_rrsr);
+			rtw_write32(rtwdev, REG_BBPSF_CTRL, csi_cfg);
 		}
 		*new_rate = DESC_RATE54M;
 	} else {
@@ -388,19 +396,10 @@ void rtw_bf_cfg_csi_rate(struct rtw_dev *rtwdev, u8 rssi, u8 cur_rate,
 			cur_rrsr &= ~BIT(DESC_RATE54M);
 			csi_cfg |= (DESC_RATE54M & BIT_MASK_CSI_RATE_VAL) <<
 				   BIT_SHIFT_CSI_RATE;
+			rtw_write16(rtwdev, REG_RRSR, cur_rrsr);
+			rtw_write32(rtwdev, REG_BBPSF_CTRL, csi_cfg);
 		}
 		*new_rate = DESC_RATE24M;
 	}
-
-	switch (rtw_hci_type(rtwdev)) {
-	case RTW_HCI_TYPE_USB:
-		rtw_write16_atomic(rtwdev, REG_RRSR, cur_rrsr);
-		rtw_write32_atomic(rtwdev, REG_BBPSF_CTRL, csi_cfg);
-		break;
-	case RTW_HCI_TYPE_PCIE:
-	default:
-		rtw_write16(rtwdev, REG_RRSR, cur_rrsr);
-		rtw_write32(rtwdev, REG_BBPSF_CTRL, csi_cfg);
-		break;
-	}
 }
+EXPORT_SYMBOL(rtw_bf_cfg_csi_rate);
