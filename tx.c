@@ -58,6 +58,10 @@ void rtw_tx_fill_tx_desc(struct rtw_tx_pkt_info *pkt_info, struct sk_buff *skb)
 	SET_TX_DESC_SPE_RPT(txdesc, pkt_info->report);
 	SET_TX_DESC_SW_DEFINE(txdesc, pkt_info->sn);
 	SET_TX_DESC_USE_RTS(txdesc, pkt_info->rts);
+	if (pkt_info->rts) {
+		SET_TX_DESC_RTSRATE(txdesc, DESC_RATE24M);
+		SET_TX_DESC_DATA_RTS_SHORT(txdesc, 1);
+	}
 	SET_TX_DESC_DISQSELSEQ(txdesc, pkt_info->dis_qselseq);
 	SET_TX_DESC_EN_HWSEQ(txdesc, pkt_info->en_hwseq);
 	SET_TX_DESC_HW_SSN_SEL(txdesc, pkt_info->hw_ssn_sel);
@@ -290,6 +294,7 @@ static void rtw_tx_data_pkt_info_update(struct rtw_dev *rtwdev,
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hw *hw = rtwdev->hw;
 	struct rtw_dm_info *dm_info = &rtwdev->dm_info;
 	struct rtw_sta_info *si;
 	u8 fix_rate;
@@ -315,7 +320,7 @@ static void rtw_tx_data_pkt_info_update(struct rtw_dev *rtwdev,
 		ampdu_density = get_tx_ampdu_density(sta);
 	}
 
-	if (info->control.use_rts)
+	if (info->control.use_rts || skb->len > hw->wiphy->rts_threshold)
 		pkt_info->rts = true;
 
 	if (sta->vht_cap.vht_supported)
@@ -596,9 +601,9 @@ static void rtw_txq_push(struct rtw_dev *rtwdev,
 	rcu_read_unlock();
 }
 
-void rtw_tx_tasklet(struct tasklet_struct *t)
+void rtw_tx_work(struct work_struct *w)
 {
-	struct rtw_dev *rtwdev = from_tasklet(rtwdev, t, tx_tasklet);
+	struct rtw_dev *rtwdev = container_of(w, struct rtw_dev, tx_work);
 	struct rtw_txq *rtwtxq, *tmp;
 
 	spin_lock_bh(&rtwdev->txq_lock);
