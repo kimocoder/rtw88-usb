@@ -868,16 +868,14 @@ u32 rtw_phy_read_rf_sipi(struct rtw_dev *rtwdev, enum rtw_rf_path rf_path,
 
 	/* toggle read edge of path A */
 	val32 = rtw_read32(rtwdev, rf_sipi_addr_a->hssi_2);
-	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2,
-		    val32 & ~LSSI_READ_EDGE_MASK);
-	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2,
-		    val32 | LSSI_READ_EDGE_MASK);
+	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2, val32 & ~LSSI_READ_EDGE_MASK);
+	rtw_write32(rtwdev, rf_sipi_addr_a->hssi_2, val32 | LSSI_READ_EDGE_MASK);
 
 	udelay(120);
 
 	en_pi = rtw_read32_mask(rtwdev, rf_sipi_addr->hssi_1, BIT(8));
-	r_addr = en_pi ? rf_sipi_addr->lssi_read_pi
-		       : rf_sipi_addr->lssi_read;
+	r_addr = en_pi ? rf_sipi_addr->lssi_read_pi : rf_sipi_addr->lssi_read;
+
 	val32 = rtw_read32_mask(rtwdev, r_addr, LSSI_READ_DATA_MASK);
 
 	shift = __ffs(mask);

@@ -5,103 +5,35 @@
 #ifndef __RTK_MAIN_H_
 #define __RTK_MAIN_H_
 
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 11, 0)
+#include "compiler.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+#include "sch_generic.h"
+#endif
+#endif
 #include <net/mac80211.h>
 #include <linux/vmalloc.h>
 #include <linux/firmware.h>
 #include <linux/average.h>
 #include <linux/bitops.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 #include <linux/bitfield.h>
+#else
+#include "bitfield.h"
+#endif
 #include <linux/iopoll.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
 
 #include "util.h"
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 8, 0)
+#include <linux/etherdevice.h>
+#endif
 
-/**
- * read_poll_timeout - Periodically poll an address until a condition is
- *			met or a timeout occurs
- * @op: accessor function (takes @args as its arguments)
- * @val: Variable to read the value into
- * @cond: Break condition (usually involving @val)
- * @sleep_us: Maximum time to sleep between reads in us (0
- *            tight-loops).  Should be less than ~20ms since usleep_range
- *            is used (see Documentation/timers/timers-howto.rst).
- * @timeout_us: Timeout in us, 0 means never timeout
- * @sleep_before_read: if it is true, sleep @sleep_us before read.
- * @args: arguments for @op poll
- *
- * Returns 0 on success and -ETIMEDOUT upon a timeout. In either
- * case, the last read value at @args is stored in @val. Must not
- * be called from atomic context if sleep_us or timeout_us are used.
- *
- * When available, you'll probably want to use one of the specialized
- * macros defined below rather than this macro directly.
- */
-#define read_poll_timeout(op, val, cond, sleep_us, timeout_us, \
-				sleep_before_read, args...) \
-({ \
-	u64 __timeout_us = (timeout_us); \
-	unsigned long __sleep_us = (sleep_us); \
-	ktime_t __timeout = ktime_add_us(ktime_get(), __timeout_us); \
-	might_sleep_if((__sleep_us) != 0); \
-	if (sleep_before_read && __sleep_us) \
-		usleep_range((__sleep_us >> 2) + 1, __sleep_us); \
-	for (;;) { \
-		(val) = op(args); \
-		if (cond) \
-			break; \
-		if (__timeout_us && \
-		    ktime_compare(ktime_get(), __timeout) > 0) { \
-			(val) = op(args); \
-			break; \
-		} \
-		if (__sleep_us) \
-			usleep_range((__sleep_us >> 2) + 1, __sleep_us); \
-	} \
-	(cond) ? 0 : -ETIMEDOUT; \
-})
-
-/**
- * read_poll_timeout_atomic - Periodically poll an address until a condition is
- *                            met or a timeout occurs
- * @op: accessor function (takes @addr as its only argument)
- * @addr: Address to poll
- * @val: Variable to read the value into
- * @cond: Break condition (usually involving @val)
- * @delay_us: Time to udelay between reads in us (0 tight-loops).  Should
- *            be less than ~10us since udelay is used (see
- *            Documentation/timers/timers-howto.rst).
- * @timeout_us: Timeout in us, 0 means never timeout
- * @delay_before_read: if it is true, delay @delay_us before read.
- *
- * Returns 0 on success and -ETIMEDOUT upon a timeout. In either
- * case, the last read value at @args is stored in @val.
- *
- * When available, you'll probably want to use one of the specialized
- * macros defined below rather than this macro directly.
- */
-#define read_poll_timeout_atomic(op, val, cond, delay_us, timeout_us, \
-					delay_before_read, args...) \
-({ \
-	u64 __timeout_us = (timeout_us); \
-	unsigned long __delay_us = (delay_us); \
-	ktime_t __timeout = ktime_add_us(ktime_get(), __timeout_us); \
-	if (delay_before_read && __delay_us) \
-		udelay(__delay_us); \
-	for (;;) { \
-		(val) = op(args); \
-		if (cond) \
-			break; \
-		if (__timeout_us && \
-		    ktime_compare(ktime_get(), __timeout) > 0) { \
-			(val) = op(args); \
-			break; \
-		} \
-		if (__delay_us) \
-			udelay(__delay_us); \
-	} \
-	(cond) ? 0 : -ETIMEDOUT; \
-})
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
+#define NUM_NL80211_BANDS IEEE80211_NUM_BANDS
+#endif
 
 #define RTW_NAPI_WEIGHT_NUM		32
 #define RTW_MAX_MAC_ID_NUM		32
@@ -123,6 +55,66 @@
 #define HW_FEATURE_LEN			13
 
 #define RTW_TP_SHIFT			18 /* bytes/2s --> Mbps */
+
+#ifndef read_poll_timeout
+#define read_poll_timeout(op, val, cond, sleep_us, timeout_us, \
+                                sleep_before_read, args...) \
+({ \
+        u64 __timeout_us = (timeout_us); \
+        unsigned long __sleep_us = (sleep_us); \
+        ktime_t __timeout = ktime_add_us(ktime_get(), __timeout_us); \
+        might_sleep_if((__sleep_us) != 0); \
+        if (sleep_before_read && __sleep_us) \
+                usleep_range((__sleep_us >> 2) + 1, __sleep_us); \
+        for (;;) { \
+                (val) = op(args); \
+                if (cond) \
+                        break; \
+                if (__timeout_us && \
+                    ktime_compare(ktime_get(), __timeout) > 0) { \
+                        (val) = op(args); \
+                        break; \
+                } \
+                if (__sleep_us) \
+                        usleep_range((__sleep_us >> 2) + 1, __sleep_us); \
+        } \
+        (cond) ? 0 : -ETIMEDOUT; \
+})
+#endif
+
+#ifndef fallthrough
+#define fallthrough do {} while (0)
+#endif
+
+#ifndef static_assert
+#define static_assert(expr, ...) __static_assert(expr, ##__VA_ARGS__, #expr)
+#define __static_assert(expr, msg, ...) _Static_assert(expr, msg)
+#endif
+
+#ifndef read_poll_timeout_atomic
+#define read_poll_timeout_atomic(op, val, cond, delay_us, timeout_us, \
+                                        delay_before_read, args...) \
+({ \
+        u64 __timeout_us = (timeout_us); \
+        unsigned long __delay_us = (delay_us); \
+        ktime_t __timeout = ktime_add_us(ktime_get(), __timeout_us); \
+        if (delay_before_read && __delay_us) \
+                udelay(__delay_us); \
+        for (;;) { \
+                (val) = op(args); \
+                if (cond) \
+                        break; \
+                if (__timeout_us && \
+                    ktime_compare(ktime_get(), __timeout) > 0) { \
+                        (val) = op(args); \
+                        break; \
+                } \
+                if (__delay_us) \
+                        udelay(__delay_us); \
+        } \
+        (cond) ? 0 : -ETIMEDOUT; \
+})
+#endif
 
 extern bool rtw_bf_support;
 extern bool rtw_disable_lps_deep_mode;
@@ -2018,7 +2010,11 @@ void rtw_set_channel(struct rtw_dev *rtwdev);
 void rtw_chip_prepare_tx(struct rtw_dev *rtwdev);
 void rtw_vif_port_config(struct rtw_dev *rtwdev, struct rtw_vif *rtwvif,
 			 u32 config);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+void rtw_tx_report_purge_timer(void *ctx);
+#else
 void rtw_tx_report_purge_timer(struct timer_list *t);
+#endif
 void rtw_update_sta_info(struct rtw_dev *rtwdev, struct rtw_sta_info *si);
 int rtw_core_start(struct rtw_dev *rtwdev);
 void rtw_core_stop(struct rtw_dev *rtwdev);

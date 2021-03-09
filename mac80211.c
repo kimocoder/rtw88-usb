@@ -2,7 +2,6 @@
 /* Copyright(c) 2018-2019  Realtek Corporation
  */
 
-#include <linux/version.h>
 #include "main.h"
 #include "sec.h"
 #include "tx.h"
@@ -76,36 +75,31 @@ static int rtw_ops_config(struct ieee80211_hw *hw, u32 changed)
 
 	rtw_leave_lps_deep(rtwdev);
 
-	if (!rtwdev->param.disable_idle) {
-		if ((changed & IEEE80211_CONF_CHANGE_IDLE) &&
-		    !(hw->conf.flags & IEEE80211_CONF_IDLE)) {
-			ret = rtw_leave_ips(rtwdev);
-			if (ret) {
-				rtw_err(rtwdev, "failed to leave idle state\n");
-				goto out;
-			}
+	if ((changed & IEEE80211_CONF_CHANGE_IDLE) &&
+	    !(hw->conf.flags & IEEE80211_CONF_IDLE)) {
+		ret = rtw_leave_ips(rtwdev);
+		if (ret) {
+			rtw_err(rtwdev, "failed to leave idle state\n");
+			goto out;
 		}
 	}
 
-	if (!rtwdev->param.disable_idle) {
-		if (changed & IEEE80211_CONF_CHANGE_PS) {
-			if (hw->conf.flags & IEEE80211_CONF_PS) {
-				rtwdev->ps_enabled = true;
-			} else {
-				rtwdev->ps_enabled = false;
-				rtw_leave_lps(rtwdev);
-			}
+	if (changed & IEEE80211_CONF_CHANGE_PS) {
+		if (hw->conf.flags & IEEE80211_CONF_PS) {
+			rtwdev->ps_enabled = true;
+		} else {
+			rtwdev->ps_enabled = false;
+			rtw_leave_lps(rtwdev);
 		}
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL)
 		rtw_set_channel(rtwdev);
 
-	if (!rtwdev->param.disable_idle) {
-		if ((changed & IEEE80211_CONF_CHANGE_IDLE) &&
-		    (hw->conf.flags & IEEE80211_CONF_IDLE))
-			rtw_enter_ips(rtwdev);
-	}
+	if ((changed & IEEE80211_CONF_CHANGE_IDLE) &&
+	    (hw->conf.flags & IEEE80211_CONF_IDLE))
+		rtw_enter_ips(rtwdev);
+
 out:
 	mutex_unlock(&rtwdev->mutex);
 	return ret;
@@ -235,6 +229,23 @@ static void rtw_ops_remove_interface(struct ieee80211_hw *hw,
 	rtw_vif_port_config(rtwdev, rtwvif, config);
 
 	mutex_unlock(&rtwdev->mutex);
+}
+
+static int rtw_ops_change_interface(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    enum nl80211_iftype type, bool p2p)
+{
+	struct rtw_dev *rtwdev = hw->priv;
+
+	rtw_info(rtwdev, "change vif %pM (%d)->(%d), p2p (%d)->(%d)\n",
+		 vif->addr, vif->type, type, vif->p2p, p2p);
+
+	rtw_ops_remove_interface(hw, vif);
+
+	vif->type = type;
+	vif->p2p = p2p;
+
+	return rtw_ops_add_interface(hw, vif);
 }
 
 static void rtw_ops_configure_filter(struct ieee80211_hw *hw,
@@ -380,6 +391,15 @@ static void rtw_ops_bss_info_changed(struct ieee80211_hw *hw,
 	if (changed & BSS_CHANGED_BEACON)
 		rtw_fw_download_rsvd_page(rtwdev);
 
+	if (changed & BSS_CHANGED_BEACON_ENABLED) {
+		if (conf->enable_beacon)
+			rtw_write32_set(rtwdev, REG_FWHW_TXQ_CTRL,
+					BIT_EN_BCNQ_DL);
+		else
+			rtw_write32_clr(rtwdev, REG_FWHW_TXQ_CTRL,
+					BIT_EN_BCNQ_DL);
+	}
+
 	if (changed & BSS_CHANGED_MU_GROUPS)
 		rtw_chip_set_gid_table(rtwdev, vif, conf);
 
@@ -515,18 +535,30 @@ out:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 static int rtw_ops_ampdu_action(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct ieee80211_ampdu_params *params)
+#else
+static int rtw_ops_ampdu_action(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				enum ieee80211_ampdu_mlme_action action,
+				struct ieee80211_sta *sta, u16 tid, u16 *ssn,
+				u8 buf_size, bool amsdu)
+#endif
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 	struct ieee80211_sta *sta = params->sta;
 	u16 tid = params->tid;
 	struct ieee80211_txq *txq = sta->txq[tid];
 	struct rtw_txq *rtwtxq = (struct rtw_txq *)txq->drv_priv;
 
 	switch (params->action) {
+#else
+	switch (action) {
+#endif
 	case IEEE80211_AMPDU_TX_START:
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
 		return IEEE80211_AMPDU_TX_START_IMMEDIATE;
 #else
 		ieee80211_start_tx_ba_cb_irqsafe(vif, sta->addr, tid);
@@ -552,6 +584,7 @@ static int rtw_ops_ampdu_action(struct ieee80211_hw *hw,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 static bool rtw_ops_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
 					   struct sk_buff *head,
 					   struct sk_buff *skb)
@@ -565,6 +598,7 @@ static bool rtw_ops_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
 
 	return true;
 }
+#endif
 
 static void rtw_ops_sw_scan_start(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
@@ -611,9 +645,14 @@ static void rtw_ops_sw_scan_complete(struct ieee80211_hw *hw,
 	mutex_unlock(&rtwdev->mutex);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
 static void rtw_ops_mgd_prepare_tx(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u16 duration)
+#else
+static void rtw_ops_mgd_prepare_tx(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif)
+#endif
 {
 	struct rtw_dev *rtwdev = hw->priv;
 
@@ -797,6 +836,7 @@ const struct ieee80211_ops rtw_ops = {
 	.config			= rtw_ops_config,
 	.add_interface		= rtw_ops_add_interface,
 	.remove_interface	= rtw_ops_remove_interface,
+	.change_interface	= rtw_ops_change_interface,
 	.configure_filter	= rtw_ops_configure_filter,
 	.bss_info_changed	= rtw_ops_bss_info_changed,
 	.conf_tx		= rtw_ops_conf_tx,
@@ -804,7 +844,9 @@ const struct ieee80211_ops rtw_ops = {
 	.sta_remove		= rtw_ops_sta_remove,
 	.set_key		= rtw_ops_set_key,
 	.ampdu_action		= rtw_ops_ampdu_action,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 	.can_aggregate_in_amsdu	= rtw_ops_can_aggregate_in_amsdu,
+#endif
 	.sw_scan_start		= rtw_ops_sw_scan_start,
 	.sw_scan_complete	= rtw_ops_sw_scan_complete,
 	.mgd_prepare_tx		= rtw_ops_mgd_prepare_tx,

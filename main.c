@@ -23,7 +23,8 @@ unsigned int rtw_debug_mask;
 EXPORT_SYMBOL(rtw_debug_mask);
 bool rtw_edcca_enabled = true;
 
-module_param_named(disable_lps_deep, rtw_disable_lps_deep_mode, bool, 0644);module_param_named(support_bf, rtw_bf_support, bool, 0644);
+module_param_named(disable_lps_deep, rtw_disable_lps_deep_mode, bool, 0644);
+module_param_named(support_bf, rtw_bf_support, bool, 0644);
 module_param_named(debug_mask, rtw_debug_mask, uint, 0644);
 
 MODULE_PARM_DESC(disable_lps_deep, "Set Y to disable Deep PS");
@@ -1661,13 +1662,14 @@ int rtw_core_init(struct rtw_dev *rtwdev)
 	INIT_LIST_HEAD(&rtwdev->rsvd_page_list);
 	INIT_LIST_HEAD(&rtwdev->txqs);
 
-	//setup_timer(&rtwdev->tx_report.purge_timer,
-	//	    (void *)(long unsigned int)rtw_tx_report_purge_timer,
-	//	    (long unsigned int)rtwdev);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	setup_timer(&rtwdev->tx_report.purge_timer,
+		    (void *)(long unsigned int)rtw_tx_report_purge_timer,
+		    (long unsigned int)rtwdev);
+#else
 	timer_setup(&rtwdev->tx_report.purge_timer,
 		    rtw_tx_report_purge_timer, 0);
-
+#endif
 	rtwdev->tx_wq = alloc_workqueue("rtw_tx_wq", WQ_UNBOUND | WQ_HIGHPRI, 0);
 
 	INIT_DELAYED_WORK(&rtwdev->watch_dog_work, rtw_watch_dog_work);
@@ -1805,7 +1807,9 @@ int rtw_register_hw(struct rtw_dev *rtwdev, struct ieee80211_hw *hw)
 
 	hw->wiphy->features |= NL80211_FEATURE_SCAN_RANDOM_MAC_ADDR;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_CAN_REPLACE_PTK0);
+#endif
 
 #ifdef CONFIG_PM
 	hw->wiphy->wowlan = rtwdev->chip->wowlan_stub;
