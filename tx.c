@@ -297,7 +297,7 @@ static void rtw_tx_mgmt_pkt_info_update(struct rtw_dev *rtwdev,
 					struct ieee80211_sta *sta,
 					struct sk_buff *skb)
 {
-	rtw_tx_pkt_info_update_rate(rtwdev, pkt_info, skb);
+	rtw_tx_pkt_info_update_rate(rtwdev, pkt_info, skb, false);
 	pkt_info->dis_qselseq = true;
 	pkt_info->en_hwseq = true;
 	pkt_info->hw_ssn_sel = 0;
