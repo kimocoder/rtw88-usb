@@ -2,6 +2,8 @@
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 PWD       := $(shell pwd)
 
+EXTRA_CFLAGS += -Wno-unused-function
+
 CONFIG_RTW88_CORE=m
 CONFIG_RTW88_PCI=m
 CONFIG_RTW88_USB=m
