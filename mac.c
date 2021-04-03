@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
-/* Copyright(c) 2018-2019  Realtek Corporation
+/* Copyright(c) 2018-2021  Realtek Corporation
  */
 
 #include "main.h"
@@ -532,7 +532,7 @@ static int iddma_download_firmware(struct rtw_dev *rtwdev, u32 src, u32 dst,
 
 int rtw_ddma_to_fw_fifo(struct rtw_dev *rtwdev, u32 ocp_src, u32 size)
 {
-+	u32 ch0_ctrl = BIT_DDMACH0_OWN | BIT_DDMACH0_DDMA_MODE;
+	u32 ch0_ctrl = BIT_DDMACH0_OWN | BIT_DDMACH0_DDMA_MODE;
 
 	if (!check_hw_ready(rtwdev, REG_DDMA_CH0CTRL, BIT_DDMACH0_OWN, 0)) {
 		rtw_dbg(rtwdev, RTW_DBG_FW, "busy to start ddma\n");

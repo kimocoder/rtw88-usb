@@ -346,6 +346,7 @@ static bool rtw_fw_dump_crash_log(struct rtw_dev *rtwdev)
 			"fw crash dump's seq is wrong: %d\n", seq);
 		goto free_buf;
 	}
+
 	print_hex_dump(KERN_ERR, "rtw88 fw dump: ", DUMP_PREFIX_OFFSET, 16, 1,
 		       buf, size, true);
 
@@ -510,6 +511,7 @@ static void __fw_recovery_work(struct rtw_dev *rtwdev)
 	rtw_iterate_stas_atomic(rtwdev, rtw_reset_sta_iter, rtwdev);
 	rtw_iterate_vifs_atomic(rtwdev, rtw_reset_vif_iter, rtwdev);
 	rtw_enter_ips(rtwdev);
+}
 
 static void rtw_fw_recovery_work(struct work_struct *work)
 {
