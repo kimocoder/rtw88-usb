@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/* Copyright(c) 2018-2019  Realtek Corporation
+/* Copyright(c) 2018-2021  Realtek Corporation
  */
 
 #ifndef __RTW_REG_DEF_H__
@@ -538,6 +538,7 @@
 #define BIT_DDMACH0_OWN		BIT(31)
 #define BIT_DDMACH0_CHKSUM_EN	BIT(29)
 #define BIT_DDMACH0_CHKSUM_STS	BIT(27)
+#define BIT_DDMACH0_DDMA_MODE	BIT(26)
 #define BIT_DDMACH0_RESET_CHKSUM_STS BIT(25)
 #define BIT_DDMACH0_CHKSUM_CONT	BIT(24)
 #define BIT_MASK_DDMACH0_DLEN	0x3ffff
