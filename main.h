@@ -1654,6 +1654,7 @@ enum rtw_rf_band {
 
 struct rtw_gapk_info {
 	u32 rf3f_bp[RF_BAND_MAX][RF_GAIN_NUM][RTW_RF_PATH_MAX];
+	u32 rf3f_fs[RTW_RF_PATH_MAX][RF_GAIN_NUM];
 	bool txgapk_bp_done;
 	s8 offset[RF_GAIN_NUM][RTW_RF_PATH_MAX];
 	s8 fianl_offset[RF_GAIN_NUM][RTW_RF_PATH_MAX];
@@ -1672,6 +1673,12 @@ struct rtw_cfo_track {
 
 #define RRSR_INIT_2G 0x15f
 #define RRSR_INIT_5G 0x150
+
+enum rtw_dm_cap {
+	RTW_DM_CAP_NA,
+	RTW_DM_CAP_TXGAPK,
+	RTW_DM_CAP_NUM
+};
 
 struct rtw_dm_info {
 	u32 cck_fa_cnt;
@@ -1742,6 +1749,7 @@ struct rtw_dm_info {
 	struct ewma_evm ewma_evm[RTW_EVM_NUM];
 	struct ewma_snr ewma_snr[RTW_SNR_NUM];
 
+	u32 dm_flags; /* enum rtw_dm_cap */
 	struct rtw_iqk_info iqk;
 	struct rtw_gapk_info gapk;
 	bool is_bt_iqk_timeout;
