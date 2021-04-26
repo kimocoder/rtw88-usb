@@ -1104,13 +1104,13 @@ static void rtw8822c_pa_bias(struct rtw_dev *rtwdev)
 		if (pg_pa_bias == EFUSE_READ_FAIL)
 			return;
 		pg_pa_bias = FIELD_GET(PPG_PABIAS_MASK, pg_pa_bias);
-		rtw_write_rf(rtwdev, path, 0x60, RF_PABIAS_2G_MASK, pg_pa_bias);
+		rtw_write_rf(rtwdev, path, RF_PA, RF_PABIAS_2G_MASK, pg_pa_bias);
 	}
 	for (path = 0; path < rtwdev->hal.rf_path_num; path++) {
 		rtw_read8_physical_efuse(rtwdev, rf_efuse_5g[path],
 					 &pg_pa_bias);
 		pg_pa_bias = FIELD_GET(PPG_PABIAS_MASK, pg_pa_bias);
-		rtw_write_rf(rtwdev, path, 0x60, RF_PABIAS_5G_MASK, pg_pa_bias);
+		rtw_write_rf(rtwdev, path, RF_PA, RF_PABIAS_5G_MASK, pg_pa_bias);
 	}
 }
 
@@ -2554,9 +2554,9 @@ static void rtw8822c_dpk_pre_setting(struct rtw_dev *rtwdev)
 		rtw_write_rf(rtwdev, path, RF_RXAGC_OFFSET, RFREG_MASK, 0x0);
 		rtw_write32(rtwdev, REG_NCTL0, 0x8 | (path << 1));
 		if (rtwdev->dm_info.dpk_info.dpk_band == RTW_BAND_2G)
-			rtw_write32(rtwdev, REG_DPD_LUT3, 0x1f100000);
+			rtw_write32(rtwdev, REG_DPD_CTL1_S1, 0x1f100000);
 		else
-			rtw_write32(rtwdev, REG_DPD_LUT3, 0x1f0d0000);
+			rtw_write32(rtwdev, REG_DPD_CTL1_S1, 0x1f0d0000);
 		rtw_write32_mask(rtwdev, REG_DPD_LUT0, BIT_GLOSS_DB, 0x4);
 		rtw_write32_mask(rtwdev, REG_IQK_CTL1, BIT_TX_CFIR, 0x3);
 	}
@@ -2574,11 +2574,11 @@ static u32 rtw8822c_dpk_rf_setting(struct rtw_dev *rtwdev, u8 path)
 
 	rtw_write_rf(rtwdev, path, RF_DEBUG, BIT_DE_TX_GAIN, 0x1);
 	rtw_write_rf(rtwdev, path, RF_DEBUG, BIT_DE_PWR_TRIM, 0x1);
-	rtw_write_rf(rtwdev, path, RF_TX_GAIN_OFFSET, BIT_TX_OFFSET_VAL, 0x0);
+	rtw_write_rf(rtwdev, path, RF_TX_GAIN_OFFSET, BIT_BB_GAIN, 0x0);
 	rtw_write_rf(rtwdev, path, RF_TX_GAIN, RFREG_MASK, ori_txbb);
 
 	if (rtwdev->dm_info.dpk_info.dpk_band == RTW_BAND_2G) {
-		rtw_write_rf(rtwdev, path, RF_TX_GAIN_OFFSET, BIT_LB_ATT, 0x1);
+		rtw_write_rf(rtwdev, path, RF_TX_GAIN_OFFSET, BIT_RF_GAIN, 0x1);
 		rtw_write_rf(rtwdev, path, RF_RXG_GAIN, BIT_RXG_GAIN, 0x0);
 	} else {
 		rtw_write_rf(rtwdev, path, RF_TXA_LB_SW, BIT_TXA_LB_ATT, 0x0);
@@ -3325,9 +3325,9 @@ static void rtw8822c_dpk_reload_data(struct rtw_dev *rtwdev)
 		rtw_write32_mask(rtwdev, REG_NCTL0, BIT_SUBPAGE,
 				 0x8 | (path << 1));
 		if (dpk_info->dpk_band == RTW_BAND_2G)
-			rtw_write32(rtwdev, REG_DPD_LUT3, 0x1f100000);
+			rtw_write32(rtwdev, REG_DPD_CTL1_S1, 0x1f100000);
 		else
-			rtw_write32(rtwdev, REG_DPD_LUT3, 0x1f0d0000);
+			rtw_write32(rtwdev, REG_DPD_CTL1_S1, 0x1f0d0000);
 
 		rtw_write8(rtwdev, REG_DPD_AGC, dpk_info->dpk_txagc[path]);
 
@@ -3732,49 +3732,6 @@ static void rtw8822c_pwr_track(struct rtw_dev *rtwdev)
 
 	__rtw8822c_pwr_track(rtwdev);
 	dm_info->pwr_trk_triggered = false;
-}
-
-static void rtw8822c_adaptivity_init(struct rtw_dev *rtwdev)
-{
-	rtw_phy_set_edcca_th(rtwdev, 0x7f, 0x7f);
-	/* mac edcca state setting */
-	rtw_write32_mask(rtwdev, REG_TX_PTCL_CTRL, BIT_DIS_EDCCA, 0);
-	rtw_write32_mask(rtwdev, REG_RD_CTRL, BIT_EDCCA_MSK_CNTDOWN_EN, 1);
-	/* edcca decistion opt */
-	rtw_write32_mask(rtwdev, REG_EDCCA_DECISION, BIT_EDCCA_OPTION, 0);
-}
-
-static void rtw8822c_adaptivity(struct rtw_dev *rtwdev)
-{
-	struct rtw_dm_info *dm_info = &rtwdev->dm_info;
-	s8 l2h, h2l;
-	u8 igi;
-
-	igi = dm_info->igi_history[0];
-	if (dm_info->edcca_mode == RTW_EDCCA_NORMAL) {
-		l2h = max_t(s8, igi + EDCCA_IGI_L2H_DIFF, EDCCA_TH_L2H_LB);
-		h2l = l2h - EDCCA_L2H_H2L_DIFF_NORMAL;
-	} else {
-		if (igi < dm_info->l2h_th_ini - EDCCA_ADC_BACKOFF)
-			l2h = igi + EDCCA_ADC_BACKOFF;
-		else
-			l2h = dm_info->l2h_th_ini;
-		h2l = l2h - EDCCA_L2H_H2L_DIFF;
-	}
-
-	rtw_phy_set_edcca_th(rtwdev, l2h, h2l);
-}
-
-static void rtw8822c_fill_txdesc_checksum(struct rtw_dev *rtwdev,
-					  struct rtw_tx_pkt_info *pkt_info,
-					  u8 *txdesc)
-{
-	struct rtw_chip_info *chip = rtwdev->chip;
-	size_t words;
-
-	words = (pkt_info->pkt_offset * 8 + chip->tx_pkt_desc_sz) / 2;
-
-	fill_txdesc_checksum_common(txdesc, words);
 }
 
 static const struct rtw_pwr_seq_cmd trans_carddis_to_cardemu_8822c[] = {
@@ -4195,10 +4152,6 @@ static struct rtw_chip_ops rtw8822c_ops = {
 	.cfg_csi_rate		= rtw_bf_cfg_csi_rate,
 	.cfo_init		= rtw8822c_cfo_init,
 	.cfo_track		= rtw8822c_cfo_track,
-
-	.adaptivity_init	= rtw8822c_adaptivity_init,
-	.adaptivity		= rtw8822c_adaptivity,
-	.fill_txdesc_checksum	= rtw8822c_fill_txdesc_checksum,
 
 	.coex_set_init		= rtw8822c_coex_cfg_init,
 	.coex_set_ant_switch	= NULL,
