@@ -92,4 +92,4 @@ ubuntu 18 + kernel v5.3 test with Network Manager ok.
 
 ## Known Issues
 
-* Currently, this driver is not upstreamed to Linux kernel driver rtw88 yet. That means, loading this module will cause unpredictable results to other working Realtek wifi pcie device, especially to those laptops with Realtek wifi IC running kernel > v5.2.
+* None atm. Need to checkpatch and clean some code only.
