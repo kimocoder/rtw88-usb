@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
-/* Copyright(c) 2018-2019  Realtek Corporation
+/* Copyright(c) 2018-2021  Realtek Corporation
  */
 
 #include "main.h"
@@ -152,7 +152,7 @@ static void rtw_fw_leave_lps_check(struct rtw_dev *rtwdev)
 	else
 		fw = &rtwdev->fw;
 
-	if (fw->feature & FW_FEATURE_LPS_C2H)
+	if (rtw_fw_feature_check(fw, FW_FEATURE_LPS_C2H))
 		ret = __rtw_fw_leave_lps_check_c2h(rtwdev);
 	else
 		ret = __rtw_fw_leave_lps_check_reg(rtwdev);
@@ -172,7 +172,7 @@ static void rtw_fw_leave_lps_check_prepare(struct rtw_dev *rtwdev)
 	else
 		fw = &rtwdev->fw;
 
-	if (fw->feature & FW_FEATURE_LPS_C2H)
+	if (rtw_fw_feature_check(fw, FW_FEATURE_LPS_C2H))
 		reinit_completion(&rtwdev->lps_leave_check);
 }
 
