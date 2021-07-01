@@ -402,7 +402,6 @@ static void rtw_ops_bss_info_changed(struct ieee80211_hw *hw,
 			rtw_write32_clr(rtwdev, REG_FWHW_TXQ_CTRL,
 					BIT_EN_BCNQ_DL);
 	}
-
 	if (changed & BSS_CHANGED_CQM)
 		rtw_fw_beacon_filter_config(rtwdev, true, vif);
 

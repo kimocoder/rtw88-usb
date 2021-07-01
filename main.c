@@ -433,7 +433,6 @@ static int rtw_fw_dump_crash_log(struct rtw_dev *rtwdev)
 	if (seq > 0) {
 		rtw_dbg(rtwdev, RTW_DBG_FW,
 			"fw crash dump's seq is wrong: %d\n", seq);
-
 		return -EINVAL;
 	}
 
@@ -555,7 +554,6 @@ void rtw_fw_recovery(struct rtw_dev *rtwdev)
 
 static void __fw_recovery_work(struct rtw_dev *rtwdev)
 {
-
 	int ret = 0;
 
 	set_bit(RTW_FLAG_RESTARTING, rtwdev->flags);
@@ -1913,6 +1911,7 @@ void rtw_core_deinit(struct rtw_dev *rtwdev)
 	destroy_workqueue(rtwdev->tx_wq);
 	spin_lock_irqsave(&rtwdev->tx_report.q_lock, flags);
 	skb_queue_purge(&rtwdev->tx_report.queue);
+	skb_queue_purge(&rtwdev->coex.queue);
 	spin_unlock_irqrestore(&rtwdev->tx_report.q_lock, flags);
 
 	list_for_each_entry_safe(rsvd_pkt, tmp, &rtwdev->rsvd_page_list,
@@ -1986,11 +1985,8 @@ int rtw_register_hw(struct rtw_dev *rtwdev, struct ieee80211_hw *hw)
 		return ret;
 	}
 
-	if (!rtwdev->efuse.country_worldwide) {
-		ret = regulatory_hint(hw->wiphy, rtwdev->efuse.country_code);
-		if (ret)
-			rtw_warn(rtwdev, "failed to hint regulatory:%d\n", ret);
-	}
+	if (regulatory_hint(hw->wiphy, rtwdev->regd.alpha2))
+		rtw_err(rtwdev, "regulatory_hint fail\n");
 
 	rtw_debugfs_init(rtwdev);
 

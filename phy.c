@@ -9,7 +9,6 @@
 #include "fw.h"
 #include "phy.h"
 #include "debug.h"
-#include "regd.h"
 
 struct phy_cfg_pair {
 	u32 addr;
@@ -78,7 +77,6 @@ u8 rtw_vht_2s_rates[] = {
 	DESC_RATEVHT2SS_MCS6, DESC_RATEVHT2SS_MCS7,
 	DESC_RATEVHT2SS_MCS8, DESC_RATEVHT2SS_MCS9
 };
-
 u8 *rtw_rate_section[RTW_RATE_SECTION_MAX] = {
 	rtw_cck_rates, rtw_ofdm_rates,
 	rtw_ht_1s_rates, rtw_ht_2s_rates,
@@ -119,58 +117,6 @@ static void rtw_phy_cck_pd_init(struct rtw_dev *rtwdev)
 	}
 
 	dm_info->cck_fa_avg = CCK_FA_AVG_RESET;
-}
-
-void rtw_phy_set_edcca_th(struct rtw_dev *rtwdev, u8 l2h, u8 h2l)
-{
-	struct rtw_hw_reg_offset *edcca_th = rtwdev->chip->edcca_th;
-
-	rtw_write32_mask(rtwdev,
-			 edcca_th[EDCCA_TH_L2H_IDX].hw_reg.addr,
-			 edcca_th[EDCCA_TH_L2H_IDX].hw_reg.mask,
-			 l2h + edcca_th[EDCCA_TH_L2H_IDX].offset);
-	rtw_write32_mask(rtwdev,
-			 edcca_th[EDCCA_TH_H2L_IDX].hw_reg.addr,
-			 edcca_th[EDCCA_TH_H2L_IDX].hw_reg.mask,
-			 h2l + edcca_th[EDCCA_TH_H2L_IDX].offset);
-}
-EXPORT_SYMBOL(rtw_phy_set_edcca_th);
-
-void rtw_phy_adaptivity_set_mode(struct rtw_dev *rtwdev)
-{
-	struct rtw_chip_info *chip = rtwdev->chip;
-	struct rtw_dm_info *dm_info = &rtwdev->dm_info;
-
-	/* turn off in debugfs for debug usage */
-	if (!rtw_edcca_enabled) {
-		dm_info->edcca_mode = RTW_EDCCA_NORMAL;
-		rtw_dbg(rtwdev, RTW_DBG_PHY, "EDCCA disabled, cannot be set\n");
-		return;
-	}
-
-	switch (rtwdev->regd.region) {
-	case NL80211_DFS_ETSI:
-		dm_info->edcca_mode = RTW_EDCCA_ADAPTIVITY;
-		dm_info->l2h_th_ini = chip->l2h_th_ini_ad;
-		break;
-	case NL80211_DFS_JP:
-		dm_info->edcca_mode = RTW_EDCCA_ADAPTIVITY;
-		dm_info->l2h_th_ini = chip->l2h_th_ini_cs;
-		break;
-	default:
-		dm_info->edcca_mode = RTW_EDCCA_NORMAL;
-		break;
-	}
-}
-
-static void rtw_phy_adaptivity_init(struct rtw_dev *rtwdev)
-{
-	struct rtw_chip_info *chip = rtwdev->chip;
-
-	rtw_regd_init_dfs_region(rtwdev, rtwdev->regd.region);
-	rtw_phy_adaptivity_set_mode(rtwdev);
-	if (chip->ops->adaptivity_init)
-		chip->ops->adaptivity_init(rtwdev);
 }
 
 static void rtw_phy_cfo_init(struct rtw_dev *rtwdev)
@@ -215,7 +161,6 @@ void rtw_phy_init(struct rtw_dev *rtwdev)
 	dm_info->iqk.done = false;
 	rtw_phy_cfo_init(rtwdev);
 	rtw_phy_tx_path_div_init(rtwdev);
-	rtw_phy_adaptivity_init(rtwdev);
 }
 EXPORT_SYMBOL(rtw_phy_init);
 
@@ -603,7 +548,6 @@ static void rtw_phy_dpk_track(struct rtw_dev *rtwdev)
 	if (chip->ops->dpk_track)
 		chip->ops->dpk_track(rtwdev);
 }
-
 
 struct rtw_rx_addr_match_data {
 	struct rtw_dev *rtwdev;

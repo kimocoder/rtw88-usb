@@ -46298,4 +46298,3 @@ static const u32 rtw8822c_array_mp_cal_init[] = {
 };
 
 RTW_DECL_TABLE_PHY_COND(rtw8822c_array_mp_cal_init, rtw_phy_cfg_bb);
-

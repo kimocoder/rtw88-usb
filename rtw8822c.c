@@ -1686,6 +1686,7 @@ static void rtw8822c_txgapk_write_tx_gain(struct rtw_dev *rtwdev)
 					"[TXGAPK] tx_gain=0x%03X >= 0xCEX\n",
 					txgapk->rf3f_bp[band][i][path]);
 			} else {
+				txgapk->rf3f_fs[path][i] = offset_tmp[i];
 				rtw_dbg(rtwdev, RTW_DBG_RFK,
 					"[TXGAPK] offset %d %d\n",
 					offset_tmp[i], i);
@@ -2481,7 +2482,7 @@ static void rtw8822c_config_cck_tx_path(struct rtw_dev *rtwdev, u8 tx_path,
 }
 
 static void rtw8822c_config_ofdm_tx_path(struct rtw_dev *rtwdev, u8 tx_path,
-					enum rtw_bb_path tx_path_sel_1ss)
+					 enum rtw_bb_path tx_path_sel_1ss)
 {
 	if (tx_path == BB_PATH_A) {
 		rtw_write32_mask(rtwdev, REG_ANTMAP0, 0xff, 0x11);
@@ -2505,9 +2506,9 @@ static void rtw8822c_config_ofdm_tx_path(struct rtw_dev *rtwdev, u8 tx_path,
 }
 
 static void rtw8822c_config_tx_path(struct rtw_dev *rtwdev, u8 tx_path,
-					enum rtw_bb_path tx_path_sel_1ss,
-					enum rtw_bb_path tx_path_cck,
-					bool is_tx2_path)
+				    enum rtw_bb_path tx_path_sel_1ss,
+				    enum rtw_bb_path tx_path_cck,
+				    bool is_tx2_path)
 {
 	rtw8822c_config_cck_tx_path(rtwdev, tx_path_cck, is_tx2_path);
 	rtw8822c_config_ofdm_tx_path(rtwdev, tx_path, tx_path_sel_1ss);
@@ -3280,6 +3281,7 @@ static u8 rtw8822c_dpk_dc_corr_check(struct rtw_dev *rtwdev, u8 path)
 		return 1;
 	else
 		return 0;
+
 }
 
 static void rtw8822c_dpk_tx_pause(struct rtw_dev *rtwdev)
@@ -4450,6 +4452,7 @@ static void rtw8822c_pwr_track_stats(struct rtw_dev *rtwdev, u8 path)
 	thermal_value = rtw_read_rf(rtwdev, path, RF_T_METER, 0x7e);
 	rtw_phy_pwrtrack_avg(rtwdev, thermal_value, path);
 }
+
 static void rtw8822c_pwr_track_path(struct rtw_dev *rtwdev,
 				    struct rtw_swing_table *swing_table,
 				    u8 path)
@@ -4458,7 +4461,6 @@ static void rtw8822c_pwr_track_path(struct rtw_dev *rtwdev,
 	u8 delta;
 
 	delta = rtw_phy_pwrtrack_get_delta(rtwdev, path);
-
 	dm_info->delta_power_index[path] =
 		rtw_phy_pwrtrack_get_pwridx(rtwdev, swing_table, path, path,
 					    delta);

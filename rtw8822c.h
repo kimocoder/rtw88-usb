@@ -212,6 +212,7 @@ const struct rtw_table name ## _tbl = {			\
 #define REG_DCKA_I_1		0x18c0
 #define REG_DCKA_Q_0		0x18d8
 #define REG_DCKA_Q_1		0x18dc
+
 #define REG_CCKSB		0x1a00
 #define BIT_BBMODE		GENMASK(2, 1)
 #define REG_RXCCKSEL		0x1a04

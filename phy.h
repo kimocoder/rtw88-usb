@@ -62,8 +62,6 @@ void rtw_phy_config_swing_table(struct rtw_dev *rtwdev,
 void rtw_phy_parsing_cfo(struct rtw_dev *rtwdev,
 			 struct rtw_rx_pkt_stat *pkt_stat);
 void rtw_phy_tx_path_diversity(struct rtw_dev *rtwdev);
-void rtw_phy_set_edcca_th(struct rtw_dev *rtwdev, u8 l2h, u8 h2l);
-void rtw_phy_adaptivity_set_mode(struct rtw_dev *rtwdev);
 
 struct rtw_txpwr_lmt_cfg_pair {
 	u8 regd;
@@ -137,7 +135,6 @@ static inline int rtw_check_supported_rfe(struct rtw_dev *rtwdev)
 			rtwdev->efuse.rfe_option);
 		return -ENODEV;
 	}
-	dev_printk(KERN_INFO, rtwdev->dev, "use rfe_def[%d]\n", rtwdev->efuse.rfe_option);
 
 	return 0;
 }

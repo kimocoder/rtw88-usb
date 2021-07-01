@@ -1770,6 +1770,7 @@ struct rtw_dm_info {
 	struct rtw_iqk_info iqk;
 	struct rtw_gapk_info gapk;
 	bool is_bt_iqk_timeout;
+
 	u8 scan_density;
 	s8 l2h_th_ini;
 	enum rtw_edcca_mode edcca_mode;

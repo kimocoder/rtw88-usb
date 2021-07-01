@@ -557,7 +557,6 @@ static void rtw_pci_dma_release(struct rtw_dev *rtwdev, struct rtw_pci *rtwpci)
 	}
 }
 
-
 static void rtw_pci_napi_start(struct rtw_dev *rtwdev)
 {
 	struct rtw_pci *rtwpci = (struct rtw_pci *)rtwdev->priv;
@@ -679,6 +678,8 @@ static u8 ac_to_hwq[] = {
 	[IEEE80211_AC_BE] = RTW_TX_QUEUE_BE,
 	[IEEE80211_AC_BK] = RTW_TX_QUEUE_BK,
 };
+
+static_assert(ARRAY_SIZE(ac_to_hwq) == IEEE80211_NUM_ACS);
 
 static u8 rtw_hw_queue_mapping(struct sk_buff *skb)
 {
@@ -1691,7 +1692,7 @@ static int disable_pci_caps(const struct dmi_system_id *dmi)
 }
 
 static const struct dmi_system_id rtw88_pci_quirks[] = {
-        {
+	{
 		.callback = disable_pci_caps,
 		.ident = "Protempo Ltd L116HTN6SPW",
 		.matches = {
